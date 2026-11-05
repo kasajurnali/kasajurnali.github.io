@@ -174,7 +174,9 @@
   }
   function render() {
     if (S.mode === "live") { buildPeriodSel(); renderKasa(); }
-    document.querySelectorAll(".tabrow button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === S.tab)));
+    if (S.tab === "io") S.tab = "ayar";
+    document.body.classList.toggle("sade", !(S.tab === "list" || S.tab === "sum"));
+    const sb = $("#sayfaBas"); if (sb) sb.textContent = SAYFA_ADI()[S.tab] || "";
     const giris = kilitli();
     document.body.classList.toggle("girisli", giris);
     $("#fab").hidden = !(S.mode === "live" && !giris && (S.tab === "list" || S.tab === "sum"));
@@ -183,10 +185,10 @@
     else if (S.mode === "loading") h = '<div class="loading">' + esc(t("Jurnal açılıyor…")) + '</div>';
     else if (giris) h = girisGerekli() ? girisHTML() : erisimHTML();
     else if (S.mode === "live" && window.KJSenk && S._senkKur && !S.senk && !S.terms) h = '<div class="loading">' + esc(t("Jurnal açılıyor…")) + '</div>';
-    else h = banners() + (S.tab === "list" ? viewList() : S.tab === "sum" ? viewSum() : S.tab === "rapor" ? viewRapor() : S.tab === "yonetim" ? viewYonetim() : viewIO());
+    else h = banners() + (S.tab === "list" ? viewList() : S.tab === "sum" ? viewSum() : S.tab === "rapor" ? viewRapor() : S.tab === "yonetim" ? viewYonetim() : viewIO(S.tab));
     $("#main").innerHTML = h;
     if (S.tab === "list" && S._focusQ) { const q = $("#q"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } S._focusQ = false; }
-    if (S.tab === "io") syncMapSelects();
+    if (S.tab === "excel" || S.tab === "tum") syncMapSelects();
     renderFoot();
     updSave();
     updSenk();
@@ -250,7 +252,7 @@
   function stampHTML(m, kalan) { return '<div class="stamp"><span class="st">' + ICON.check + esc(t("Dönem kapandı")) + '</span><span class="sx">' + esc(t("Kalan kasa")) + ' <b>' + tl(kalan) + '</b> → ' + esc(t("{ay} devrine geçti", { ay: monthLabel(addMonth(m, 1)) })) + '</span><button class="linkbtn" data-reopen="' + m + '">' + esc(t("Dönemi yeniden aç")) + '</button></div>'; }
   function welcome() {
     return '<div class="empty"><h3>' + esc(t("Kasa Jurnali’ye hoş geldiniz")) + '</h3><p>' + esc(WEB ? t("Fişlerinizi buraya girin; kasa, devir ve raporlar kendiliğinden hesaplanır. Her şey bu telefona kaydedilir, internet gerekmez.") : t("Fişlerinizi buraya girin; kasa, devir ve raporlar kendiliğinden hesaplanır. Her şey bu bilgisayara kaydedilir, internet gerekmez.")) + '</p>' +
-      '<div class="btns"><button class="btn pri" data-new>' + esc(t("İlk fişi ekle")) + '</button><button class="btn" data-go="io" data-focus="opName">' + esc(t("Defter adı ve başlangıç kasası")) + '</button><button class="btn" data-go="io" data-focus="drop">' + esc(t("Excel’den aktar")) + '</button></div>' + (S.senk && S.senk.hazir && !S.senk.bagli ? '<p class="small" style="margin-top:14px">' + esc(t("Defteriniz başka bir cihazda mı? Ayarlar’dan Google Drive eşitlemesini açın; kayıtlar buraya gelir.")) + ' <button class="linkbtn" data-go="io" data-focus="gBagla">' + esc(t("Eşitlemeyi aç")) + '</button></p>' : "") + '</div>';
+      '<div class="btns"><button class="btn pri" data-new>' + esc(t("İlk fişi ekle")) + '</button><button class="btn" data-go="tekne" data-focus="opName">' + esc(t("Defter adı ve başlangıç kasası")) + '</button><button class="btn" data-go="excel" data-focus="drop">' + esc(t("Excel’den aktar")) + '</button></div>' + (S.senk && S.senk.hazir && !S.senk.bagli ? '<p class="small" style="margin-top:14px">' + esc(t("Defteriniz başka bir cihazda mı? Ayarlar’dan Google Drive eşitlemesini açın; kayıtlar buraya gelir.")) + ' <button class="linkbtn" data-go="hesap" data-focus="gBagla">' + esc(t("Eşitlemeyi aç")) + '</button></p>' : "") + '</div>';
   }
 
   /* ---------------- Özet ---------------- */
@@ -291,12 +293,16 @@
 
   /* ---------------- Ayarlar ve yedek ---------------- */
   const FIELDS = [["date", "Tarih"], ["vendor", "Şirket"], ["desc", "Açıklama"], ["out", "Harcama"], ["in", "Gelen para"], ["pay", "Ödeme şekli"], ["cat", "Kategori"], ["note", "Not"]];
-  function viewIO() {
-    const st = S.set;
+  // one page per menu item; "tum" (all sections together) is used only by the tests
+  const SAYFA_ADI = () => ({ list: t("Jurnal"), sum: t("Özet"), rapor: t("Raporlar"), tekne: t("Tekne bilgileri"), hesap: t("Google hesabı ve eşitleme"), excel: t("Excel’den içe aktar"), yedek: t("Yedekler"), ayar: t("Ayarlar"), yonetim: t("Yönetim merkezi"), tum: t("Ayarlar") });
+  function viewIO(bolum) {
+    const st = S.set, tum = bolum === "tum";
+    const P = {};
     let h = '<div class="panel"><h3>' + esc(t("Dil · Language")) + '</h3><div class="seg langseg" role="radiogroup" aria-label="Dil / Language"><label><input type="radio" name="lang" value="tr"' + (K.lang === "tr" ? " checked" : "") + '><span>Türkçe</span></label><label><input type="radio" name="lang" value="en"' + (K.lang === "en" ? " checked" : "") + '><span>English</span></label></div>' +
       '<p class="lead" style="margin:10px 0 0;font-size:13px">' + esc(t("Ekran, PDF rapor ve Excel tablosu seçilen dilde hazırlanır. Kayıtlarınız dil değişince değişmez. Tarih kutularının görünümü program bir sonraki açılışta yeni dile uyar.")) + '</p></div>';
-    h += senkPanel();
-    h += '<div class="panel" id="tekPanel"><h3>' + esc(t("Tekne ve kasa bilgileri")) + '</h3><p class="lead">' + esc(t("Defter adı ekranın üstünde ve raporlarda görünür. Hazırlayan ve onaylayan adları PDF raporun imza alanlarına yazılır.")) + '</p>' +
+    P.dil = h; h = "";
+    P.hesap = senkPanel();
+    h = '<div class="panel" id="tekPanel"><h3>' + esc(t("Tekne ve kasa bilgileri")) + '</h3><p class="lead">' + esc(t("Defter adı ekranın üstünde ve raporlarda görünür. Hazırlayan ve onaylayan adları PDF raporun imza alanlarına yazılır.")) + '</p>' +
       '<div class="inline"><div class="field" style="flex-basis:100%"><label for="opName">' + esc(t("Tekne adı (ya da şirket, ev)")) + '</label><input id="opName" maxlength="80" value="' + esc(st.name || "") + '" placeholder="' + esc(t("Örn. M/Y Deniz Yıldızı")) + '"></div>' +
       '<div class="field"><label for="opPrep">' + esc(t("Kaptan (raporu hazırlayan)")) + '</label><input id="opPrep" maxlength="80" value="' + esc(st.preparedBy || "") + '" placeholder="' + esc(t("Örn. Ali Yılmaz")) + '"></div>' +
       '<div class="field"><label for="opAppr">' + esc(t("Donatan / armatör (onaylayan)")) + '</label><input id="opAppr" maxlength="80" value="' + esc(st.approvedBy || "") + '" placeholder="' + esc(t("Örn. Mehmet Demir")) + '"></div></div>' +
@@ -304,10 +310,12 @@
       '<div class="field"><label for="opDate">' + esc(t("Başlangıç tarihi")) + '</label><input id="opDate" type="date" value="' + esc(st.openingDate || "") + '"></div>' +
       '<div class="field"><label for="opLow">' + esc(t("Kasa uyarı sınırı (₺)")) + '</label>' + numBox("opLow", num(+st.lowLimit || 0), 2) + '><span class="help">' + esc(t("Kasa bunun altına inince uyarır. 0 = kapalı")) + '</span></div>' +
       '<button class="btn pri" id="saveOp">' + esc(t("Ayarları kaydet")) + '</button></div></div>';
-    h += '<div class="panel" id="importPanel"><h3>' + esc(t("Excel’den içe aktar")) + '</h3>';
+    P.tekne = h;
+    h = '<div class="panel" id="importPanel"><h3>' + esc(t("Excel’den içe aktar")) + '</h3>';
     if (!S.imp) h += '<label class="drop" id="drop" for="file" tabindex="0"><strong>' + esc(t("Fiş takip tablonuzu (.xlsx) seçin")) + '</strong><p>' + esc(WEB ? t("Dosyayı Dosyalar uygulamasından seçin. Aylık sayfaların hepsi birden okunur; defterde zaten olan fişler tekrar eklenmez.") : t("Dosyayı buraya sürükleyip bırakın ya da tıklayıp seçin. Aylık sayfaların hepsi birden okunur; defterde zaten olan fişler tekrar eklenmez.")) + '</p><span class="btn pri">' + esc(t("Dosya seç")) + '</span></label><input id="file" type="file" accept=".xlsx,.xlsm" hidden>';
     else h += viewImport();
     h += '</div>';
+    P.excel = h; h = "";
     if (WEB) h += '<div class="panel" id="yedekPanel"><h3>' + esc(t("Kayıt yeri ve yedekler")) + '</h3><p class="lead">' + esc(t("Her değişiklik anında bu telefona kaydedilir ve her gün kendiliğinden bir yedek alınır. Uygulamayı ana ekrandan sildiğinizde ya da Safari’nin site verilerini temizlediğinizde telefondaki kayıtlar da silinir; Google Drive eşitlemesini açık tutun ya da ara ara yedek dosyası alın.")) + '</p>' +
       '<div class="btns" style="justify-content:flex-start"><button class="btn" id="backupNow">' + esc(t("Yedek dosyası al")) + '</button><label class="btn" for="restoreFile" style="cursor:pointer">' + esc(t("Yedekten geri yükle")) + '</label><input id="restoreFile" type="file" accept=".json,application/json" hidden></div>' +
       '<p class="lead" style="margin:8px 0 0;font-size:13px">' + esc(t("Asıl fiş ve faturaları kâğıt ya da elektronik olarak ayrıca saklayın; programa fotoğraf eklemek, mevzuattaki saklama yükümlülüğünün (ör. VUK m. 253, TTK m. 82) yerine geçmez.")) + '</p></div>';
@@ -316,8 +324,9 @@
       '<div class="btns" style="justify-content:flex-start"><button class="btn" id="openFolder">' + esc(t("Klasörü aç")) + '</button><button class="btn" id="backupNow">' + esc(t("Şimdi yedek al")) + '</button><label class="btn" for="restoreFile" style="cursor:pointer">' + esc(t("Yedekten geri yükle")) + '</label><input id="restoreFile" type="file" accept=".json" hidden></div>' +
       '<p class="lead" style="margin:12px 0 0;font-size:13px">' + esc(t("Başka bilgisayara taşımak için bu klasörü USB belleğe kopyalayın. Yeni bilgisayarda programı kurup klasörü aynı yere (Belgeler) yapıştırın.")) + '</p>' +
       '<p class="lead" style="margin:8px 0 0;font-size:13px">' + esc(t("Asıl fiş ve faturaları kâğıt ya da elektronik olarak ayrıca saklayın; programa fotoğraf eklemek, mevzuattaki saklama yükümlülüğünün (ör. VUK m. 253, TTK m. 82) yerine geçmez.")) + '</p></div>';
+    P.yedek = h;
     const k = st.kabul;
-    h += '<div class="panel"><h3>' + esc(t("Hakkında ve yasal bilgiler")) + '</h3><p class="lead">' + esc(WEB
+    h = '<div class="panel" id="hakPanel"><h3>' + esc(t("Hakkında ve yasal bilgiler")) + '</h3><p class="lead">' + esc(WEB
       ? t("Kasa Jurnali {surum} (iPhone) · Kayıtlarınız bu telefonda durur; Google Drive eşitlemesini açarsanız kendi Google hesabınıza da kopyalanır. Uygulama yeni sürümü kendiliğinden alır. Kaldırmak için ana ekrandaki simgeye basılı tutup “Uygulamayı Sil”i seçin (telefondaki kayıtlar da silinir).", { surum: SURUM })
       : t("Kasa Jurnali {surum} · Kayıtlarınız bu bilgisayarda durur; Google Drive eşitlemesini açarsanız kendi Google hesabınıza da kopyalanır. Kaldırmak için: Windows Ayarlar › Uygulamalar › Kasa Jurnali › Kaldır (kayıtlarınız silinmez).", { surum: SURUM })) + '</p>' +
       (WEB ? "" : '<label class="check" style="margin:4px 0 10px"><input type="checkbox" id="guncelDenetim"' + (S.set.guncelleme !== false ? " checked" : "") + '> <span>' + esc(t("Yeni sürümleri otomatik denetle (günde iki kez, yalnızca sürüm bilgisi indirilir)")) + '</span></label>' +
@@ -325,7 +334,9 @@
       '<div class="btns" style="justify-content:flex-start"><button class="btn" id="openGuide">' + esc(t("Kullanım kılavuzu")) + '</button><button class="btn" data-legal="kosullar">' + esc(t("Kullanım Koşulları")) + '</button><button class="btn" data-legal="gizlilik">' + esc(t("Gizlilik ve KVKK")) + '</button><button class="btn" data-legal="lisanslar">' + esc(t("Üçüncü taraf lisansları")) + '</button></div>' +
       (k && k.tarih ? '<p class="lead" style="margin:12px 0 0;font-size:13px">' + esc(t("Kullanım Koşulları {tarih} tarihinde kabul edildi (sürüm {surum}).", { tarih: K.dateTime(new Date(k.tarih)), surum: k.surum || "" })) + '</p>' : "") +
       '<p class="lead" style="margin:6px 0 0;font-size:13px">' + esc(t("© 2026 Kasa Jurnali geliştiricisi. Tüm hakları saklıdır.")) + '</p></div>';
-    return h;
+    P.ayar = P.dil + h;
+    if (tum) return P.ayar + P.hesap + P.tekne + P.excel + P.yedek;
+    return P[bolum] || P.ayar;
   }
 
   /* ---------------- Excel import ---------------- */
@@ -429,6 +440,7 @@
       const wb = await api("api/excel-oku", { method: "POST", body: await f.arrayBuffer(), headers: { "Content-Type": "application/octet-stream" } });
       S.imp = { name: f.name, wb, sheets: wb.SheetNames, sheet: wb.SheetNames.length > 1 ? "__all" : wb.SheetNames[0], busy: false, setOp: null };
       if (S.imp.sheet !== "__all") loadSingle(S.imp.sheet);
+      if (S.tab !== "tum") S.tab = "excel";
       runParse(); render();
       const p = $("#importPanel"); if (p) p.scrollIntoView({ block: "start", behavior: "smooth" });
     } catch (e) { toast(e.message || t("Dosya okunamadı.")); }
@@ -983,8 +995,8 @@
   function openMenu() {
     if (kilitli() || mustAccept()) return;
     const b = S.senk || {};
-    const ogeler = [["list", "ev", t("Ana sayfa")], ["sum", "ozet", t("Özet")], ["rapor", "rapor", t("Raporlar")], ["io#tekPanel", "tekne", t("Tekne bilgileri")],
-      ["io#senkPanel", "bulut", t("Google hesabı ve eşitleme")], ["io#importPanel", "excel", t("Excel’den içe aktar")], ["io#yedekPanel", "yedek", t("Yedekler")], ["io", "ayar", t("Ayarlar")],
+    const ogeler = [["list", "ev", t("Jurnal")], ["sum", "ozet", t("Özet")], ["rapor", "rapor", t("Raporlar")], ["tekne", "tekne", t("Tekne bilgileri")],
+      ["hesap", "bulut", t("Google hesabı ve eşitleme")], ["excel", "excel", t("Excel’den içe aktar")], ["yedek", "yedek", t("Yedekler")], ["ayar", "ayar", t("Ayarlar")],
       ["#kilavuz", "kitap", t("Kullanım kılavuzu")], ["#yasal", "yasal", t("Yasal bilgiler")]];
     if (b.lisans && b.lisans.yonetici) ogeler.splice(3, 0, ["yonetim", "kisiler", t("Yönetim merkezi")]);
     if (b.bagli) ogeler.push(["#cikis", "cikis", t("Oturumu kapat")]);
@@ -992,6 +1004,7 @@
       ogeler.map(([k, i, l]) => '<button type="button" class="ditem' + (k === S.tab ? " on" : "") + '" data-menu="' + k + '">' + mik(i) + '<span>' + esc(l) + '</span></button>').join("") +
       '<div class="dsurum">Kasa Jurnali ' + esc(SURUM) + '</div></nav></div>';
   }
+  window.KJgit = k => menuSec(k === "io" ? "tum" : k);   // used by the tests to open a page directly
   function menuSec(k) {
     closeSheet();
     if (k === "#kilavuz") { openDoc("kilavuz"); return; }
@@ -1044,7 +1057,7 @@
     $("#senkLbl").textContent = b.durum === "calisiyor" ? t("Eşitleniyor…") : b.durum === "hata" ? t("Eşitlenemedi") : b.durum === "cevrimdisi" ? t("Çevrimdışı") : t("Eşitlendi");
     el.title = senkDurumMetni(b) + (b.hesap ? " · " + b.hesap : "");
   }
-  function senkPanelYenile() { if (kilitli() || document.body.classList.contains("girisli")) { if (!modalOpen()) render(); return; } const p = $("#senkPanel"); if (p && S.tab === "io") p.outerHTML = senkPanel(); }
+  function senkPanelYenile() { if (kilitli() || document.body.classList.contains("girisli")) { if (!modalOpen()) render(); return; } const p = $("#senkPanel"); if (p && (S.tab === "hesap" || S.tab === "tum")) p.outerHTML = senkPanel(); }
   async function gBagla(btn) {
     if (btn) btn.disabled = true;
     try {
@@ -1200,7 +1213,7 @@
     if (t0.closest("#ySil")) { ySil(t0.closest("#ySil")); return; }
     if (t0.closest("#yAyarKaydet")) { yAyarKaydet(t0.closest("#yAyarKaydet")); return; }
     const rp = t0.closest("[data-rapor]"); if (rp) { S.period = rp.dataset.ay; render(); openExport(); const r = document.querySelector('input[name="fmt"][value="' + rp.dataset.rapor + '"]'); if (r) r.checked = true; return; }
-    if (t0.closest("#senkBtn")) { S.tab = "io"; render(); const p = $("#senkPanel"); if (p) p.scrollIntoView({ block: "start", behavior: "smooth" }); return; }
+    if (t0.closest("#senkBtn")) { S.tab = "hesap"; render(); window.scrollTo({ top: 0 }); return; }
     if (t0.closest("#gBagla")) { gBagla(t0.closest("#gBagla")); return; }
     if (t0.closest("#gKopya")) { const k = S.gbag && S.gbag.kod; if (k && navigator.clipboard) navigator.clipboard.writeText(k).then(() => toast(t("Kod kopyalandı."))).catch(() => { }); return; }
     if (t0.closest("#gVazgec")) { if (S.gbag) clearTimeout(S.gbag.t); S.gbag = null; senkPanelYenile(); return; }
@@ -1212,7 +1225,6 @@
     if (t0.closest("#guncelOk")) { guncelKur(t0.closest("#guncelOk")); return; }
     if (t0.closest("#guncelNow")) { guncelDenetle(true); return; }
     if (t0.closest("#swGuncelle")) { swGuncelle(); return; }
-    const tab = t0.closest(".tabrow button"); if (tab) { S.tab = tab.dataset.tab; render(); window.scrollTo({ top: 0 }); return; }
     if (t0.closest("[data-addin]")) { openSheet(null, "in"); return; }
     if (t0.closest("[data-new]")) { openSheet(null); return; }
     const km = t0.closest("[data-kimden]"); if (km) { const fv = $("#f_vendor"); if (fv) { fv.value = km.dataset.kimden; const fd = $("#f_desc"); if (fd && !fd.value) fd.focus(); } return; }
