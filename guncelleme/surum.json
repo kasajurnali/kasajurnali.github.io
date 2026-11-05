@@ -1,11 +1,11 @@
 {
  "surum": "2.1.1",
- "tarih": "2026-11-05",
+ "tarih": "2026-11-06",
  "notlar": {
   "tr": "Google ile oturum açma düzeltildi. Kayıtlar artık Google Drive’ınızdaki “Kasa Jurnali” klasöründe. Yeni menü, Raporlar sayfası, gelen parada donatan/armatör ve havale, EFT, nakit.",
   "en": "Sign-in with Google fixed. Records are now kept in a “Kasa Jurnali” folder in your Google Drive. New menu, Reports page, owner and bank transfer, EFT or cash for income."
  },
  "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.1.1.exe",
- "boyut": 18539008,
- "sha256": "9b63c506a4f06d3b1b4e21a29b9da3ac8b421e1b257a44637bd4b1790ed84d90"
+ "boyut": 18539520,
+ "sha256": "e35c7c74dd0f8fcbc7244ef04dbd52a5f7adca11c393c44c5cbec40fa564a46d"
 }

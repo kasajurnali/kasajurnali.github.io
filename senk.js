@@ -162,7 +162,12 @@
   /* ---------------- Drive requests ---------------- */
   async function istekOk(method, yol, govde, tur) {
     const r = await T().istek(method, yol, govde, tur);
-    if (!r.ok) { const b = await r.text().catch(() => ""); let m = ""; try { m = JSON.parse(b).error.message; } catch (e) { } throw hata("Google Drive: " + (m || ("HTTP " + r.status)), "drive", r.status); }
+    if (!r.ok) {
+      const b = await r.text().catch(() => ""); let m = ""; try { m = JSON.parse(b).error.message; } catch (e) { }
+      // the Drive box was left unticked on Google's permission screen
+      if (r.status === 403 && /insufficient/i.test(m)) throw hata(K.t("Google Drive izni verilmemiş. Oturumu kapatıp yeniden açın; Google’ın izin ekranında Google Drive kutusunu da işaretleyin."), "izin", 403);
+      throw hata("Google Drive: " + (m || ("HTTP " + r.status)), "drive", r.status);
+    }
     return r;
   }
   const gjson = async (method, yol) => (await istekOk(method, yol)).json();

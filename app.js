@@ -1017,7 +1017,7 @@
     if (!b.hazir) return h + '<p class="lead" style="margin:0">' + esc(t("Bu sürümde Google Drive eşitlemesi henüz etkin değil.")) + '</p></div>';
     if (b.bagli) {
       h += '<p class="lead">' + esc(t("Kayıtlarınız ve fiş fotoğrafları, Google Drive’ınızdaki “Kasa Jurnali” klasörü üzerinden diğer cihazlarınızla kendiliğinden eşitlenir. İnternet yokken yapılan değişiklikler, bağlantı gelince gönderilir. Bu klasörü silmeyin ve adını değiştirmeyin.")) + '</p>' +
-        '<div class="kv senkkv"><span>' + esc(t("Bağlı hesap")) + '</span><b>' + esc(b.hesap || t("Google hesabı")) + '</b><span>' + esc(t("Durum")) + '</span><b>' + esc(senkDurumMetni(b)) + '</b>' + (erisimSatiri() ? '<span>' + esc(t("Kullanım")) + '</span><b>' + esc(erisimSatiri()) + '</b>' : "") + '</div>' +
+        '<div class="kv senkkv"><span>' + esc(t("Bağlı hesap")) + '</span><b>' + esc(b.hesap || (b.lisans && b.lisans.hesap) || t("Google hesabı")) + '</b><span>' + esc(t("Durum")) + '</span><b>' + esc(senkDurumMetni(b)) + '</b>' + (erisimSatiri() ? '<span>' + esc(t("Kullanım")) + '</span><b>' + esc(erisimSatiri()) + '</b>' : "") + '</div>' +
         (b.durum === "hata" && b.hata ? '<p class="err-t" style="margin:8px 0 0">' + esc(b.hata) + '</p>' : "") +
         '<div class="btns" style="justify-content:flex-start;margin-top:12px"><button class="btn pri" id="senkNow"' + (b.calisiyor ? " disabled" : "") + '>' + esc(t("Şimdi eşitle")) + '</button><button class="btn" id="senkOff">' + esc(b.zorunlu ? t("Oturumu kapat") : t("Bağlantıyı kes")) + '</button></div>';
     } else if (S.gbag) {
