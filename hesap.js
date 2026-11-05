@@ -123,7 +123,7 @@
     for (const [c, re] of CAT_RULES) if (re.test(a) || re.test(b)) return c;
     return "";
   }
-  const payName = p => p === "kart" ? t("Kart") : p === "nakit" ? t("Nakit") : "";
+  const payName = p => p === "kart" ? t("Kart") : p === "nakit" ? t("Nakit") : p === "havale" ? t("Havale") : p === "eft" ? t("EFT") : "";
   function paySplit(list) { const r = { nakit: 0, kart: 0, none: 0 }; list.forEach(e => { if (isIn(e)) return; const a = +e.amount || 0; if (e.pay === "kart") r.kart += a; else if (e.pay === "nakit") r.nakit += a; else r.none += a; }); r.nakit = r2(r.nakit); r.kart = r2(r.kart); r.none = r2(r.none); return r; }
   function catSplit(list) { const bc = {}; list.forEach(e => { if (isIn(e)) return; const k = e.cat || "Kategorisiz"; bc[k] = r2((bc[k] || 0) + (+e.amount || 0)); }); return Object.entries(bc).sort((a, b) => b[1] - a[1]); }
   const isFuel = e => !isIn(e) && (e.cat === "Yakıt" || +e.lt > 0);

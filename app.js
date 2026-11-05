@@ -170,16 +170,20 @@
       '<div class="kc in"><span class="lbl">' + esc(t("Gelen para")) + '</span><span class="v">' + tl(k.in) + '</span></div>' +
       '<div class="kc"><span class="lbl">' + esc(t("Toplam harcama")) + '</span><span class="v">' + tl(k.out) + '</span>' + paySplitLine(S.period || curYM()) + '</div>' +
       '<div class="kc end' + (k.kalan < 0 ? " neg" : "") + (low ? " low" : "") + '"><span class="lbl">' + esc(k.kalan < 0 ? t("Kasa açığı") : t("Kalan kasa")) + '</span><span class="v">' + tl(k.kalan) + '</span>' + (k.kalan < 0 ? '<span class="from">' + esc(t("Gelen para önce açığı kapatır")) + '</span>' : low ? '<span class="from">' + esc(t("Uyarı sınırının altında")) + '</span>' : "") + '</div>';
-    $("#formula").textContent = S.set.opening == null && S.mode === "live" && S.items.length ? t("Başlangıç kasası girilmedi; “Ayarlar ve yedek” sekmesinden ekleyin.") : t("Kalan kasa = Devir + Gelen para − Harcama. Kasa biterse eksiye düşer; gelen para önce açığı kapatır.");
+    $("#formula").textContent = S.set.opening == null && S.mode === "live" && S.items.length ? t("Başlangıç kasası girilmedi; “Ayarlar” bölümünden ekleyin.") : t("Kalan kasa = Devir + Gelen para − Harcama. Kasa biterse eksiye düşer; gelen para önce açığı kapatır.");
   }
   function render() {
     if (S.mode === "live") { buildPeriodSel(); renderKasa(); }
     document.querySelectorAll(".tabrow button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === S.tab)));
-    $("#fab").hidden = !(S.mode === "live" && S.tab !== "io");
+    const giris = kilitli();
+    document.body.classList.toggle("girisli", giris);
+    $("#fab").hidden = !(S.mode === "live" && !giris && (S.tab === "list" || S.tab === "sum"));
     let h = "";
     if (S.mode === "error") h = '<div class="note err"><span><b>' + esc(t("Kayıtlar açılamadı")) + '</b>' + esc(S.bootErr || "") + '</span></div>';
     else if (S.mode === "loading") h = '<div class="loading">' + esc(t("Jurnal açılıyor…")) + '</div>';
-    else h = banners() + (S.tab === "list" ? viewList() : S.tab === "sum" ? viewSum() : viewIO());
+    else if (giris) h = girisGerekli() ? girisHTML() : erisimHTML();
+    else if (S.mode === "live" && window.KJSenk && S._senkKur && !S.senk && !S.terms) h = '<div class="loading">' + esc(t("Jurnal açılıyor…")) + '</div>';
+    else h = banners() + (S.tab === "list" ? viewList() : S.tab === "sum" ? viewSum() : S.tab === "rapor" ? viewRapor() : S.tab === "yonetim" ? viewYonetim() : viewIO());
     $("#main").innerHTML = h;
     if (S.tab === "list" && S._focusQ) { const q = $("#q"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } S._focusQ = false; }
     if (S.tab === "io") syncMapSelects();
@@ -191,6 +195,8 @@
     let h = "";
     if (WEB && S.yeniSurum) h += '<div class="note"><span><b>' + esc(t("Yeni sürüm hazır")) + '</b>' + esc(t("Kasa Jurnali’nin yeni sürümü indirildi. Kayıtlarınız olduğu gibi kalır.")) + '</span><span class="btns"><button class="btn sm pri" id="swGuncelle">' + esc(t("Şimdi güncelle")) + '</button></span></div>';
     if (!WEB && S.guncel && S.guncel.yeni && !S.guncelSonra) h += '<div class="note"><span><b>' + esc(t("Yeni sürüm: Kasa Jurnali {surum}", { surum: S.guncel.yeni.surum })) + '</b>' + esc((S.guncel.yeni.notlar && (S.guncel.yeni.notlar[K.lang] || S.guncel.yeni.notlar.tr)) || t("Kayıtlarınıza dokunulmadan güncellenir.")) + '</span><span class="btns"><button class="btn sm" id="guncelSonra">' + esc(t("Sonra")) + '</button><button class="btn sm pri" id="guncelAc">' + esc(t("Güncelle")) + '</button></span></div>';
+    const kg = kalanGun();
+    if (kg != null && kg <= 7) h += '<div class="note warn"><span><b>' + esc(kg <= 0 ? (S.senk.lisans.deneme ? t("Deneme sürenizin son günü") : t("Kullanım sürenizin son günü")) : S.senk.lisans.deneme ? t("Deneme sürenizin bitmesine {n} gün kaldı", { n: kg }) : t("Kullanım sürenizin bitmesine {n} gün kaldı", { n: kg })) + '</b>' + esc(t("Son gün: {tarih}. Sonra da kullanmak için Kasa Jurnali ile iletişime geçin.", { tarih: dmy(S.senk.lisans.bitis) })) + '</span></div>';
     if (S.notice) h += '<div class="note warn"><span><b>' + esc(t("Bilgi")) + '</b>' + esc(S.notice) + '</span><span class="btns"><button class="btn sm" data-dismiss>' + esc(t("Tamam")) + '</button></span></div>';
     if (S.saveErr) h += '<div class="note err"><span><b>' + esc(t("Son değişiklik kaydedilemedi")) + '</b>' + esc(S.saveErr) + '</span><span class="btns"><button class="btn sm pri" id="retrySave">' + esc(t("Tekrar kaydet")) + '</button></span></div>';
     if (S.tab === "list" && S.items.length) {
@@ -226,7 +232,7 @@
         const inn = isIn(i);
         const meta = [
           inn ? '<span class="chip in">' + esc(t("Gelen para")) + '</span>' : i.cat ? '<span class="chip">' + esc(K.catLabel(i.cat)) + '</span>' : "",
-          !inn && i.pay ? '<span class="chip pay">' + esc(K.payName(i.pay)) + '</span>' : "",
+          i.pay ? '<span class="chip pay">' + esc(K.payName(i.pay)) + '</span>' : "",
           i.cur && i.cur !== "TRY" && +i.fxAmount > 0 ? '<span class="chip cur">' + esc(fx(i.fxAmount, i.cur) + " · " + t("kur") + " " + K.dec(i.fxRate)) + '</span>' : "",
           +i.lt > 0 ? '<span class="chip cur">' + ICON.fuel + esc(K.ltStr(i.lt) + " · " + K.perL(i.amount / i.lt)) + '</span>' : "",
           i.photo ? '<span class="chip cam">' + ICON.cam + esc(t("Fiş")) + '</span>' : "",
@@ -290,10 +296,10 @@
     let h = '<div class="panel"><h3>' + esc(t("Dil · Language")) + '</h3><div class="seg langseg" role="radiogroup" aria-label="Dil / Language"><label><input type="radio" name="lang" value="tr"' + (K.lang === "tr" ? " checked" : "") + '><span>Türkçe</span></label><label><input type="radio" name="lang" value="en"' + (K.lang === "en" ? " checked" : "") + '><span>English</span></label></div>' +
       '<p class="lead" style="margin:10px 0 0;font-size:13px">' + esc(t("Ekran, PDF rapor ve Excel tablosu seçilen dilde hazırlanır. Kayıtlarınız dil değişince değişmez. Tarih kutularının görünümü program bir sonraki açılışta yeni dile uyar.")) + '</p></div>';
     h += senkPanel();
-    h += '<div class="panel"><h3>' + esc(t("Defter ve kasa ayarları")) + '</h3><p class="lead">' + esc(t("Defter adı ekranın üstünde ve raporlarda görünür. Hazırlayan ve onaylayan adları PDF raporun imza alanlarına yazılır.")) + '</p>' +
-      '<div class="inline"><div class="field" style="flex-basis:100%"><label for="opName">' + esc(t("Defter adı (tekne, şirket ya da ev)")) + '</label><input id="opName" maxlength="80" value="' + esc(st.name || "") + '" placeholder="' + esc(t("ör. M/Y Deniz Yıldızı")) + '"></div>' +
-      '<div class="field"><label for="opPrep">' + esc(t("Hazırlayan (kaptan)")) + '</label><input id="opPrep" maxlength="80" value="' + esc(st.preparedBy || "") + '" placeholder="' + esc(t("Ad Soyad")) + '"></div>' +
-      '<div class="field"><label for="opAppr">' + esc(t("Onaylayan (armatör / yetkili)")) + '</label><input id="opAppr" maxlength="80" value="' + esc(st.approvedBy || "") + '" placeholder="' + esc(t("Ad Soyad")) + '"></div></div>' +
+    h += '<div class="panel" id="tekPanel"><h3>' + esc(t("Tekne ve kasa bilgileri")) + '</h3><p class="lead">' + esc(t("Defter adı ekranın üstünde ve raporlarda görünür. Hazırlayan ve onaylayan adları PDF raporun imza alanlarına yazılır.")) + '</p>' +
+      '<div class="inline"><div class="field" style="flex-basis:100%"><label for="opName">' + esc(t("Tekne adı (ya da şirket, ev)")) + '</label><input id="opName" maxlength="80" value="' + esc(st.name || "") + '" placeholder="' + esc(t("Örn. M/Y Deniz Yıldızı")) + '"></div>' +
+      '<div class="field"><label for="opPrep">' + esc(t("Kaptan (raporu hazırlayan)")) + '</label><input id="opPrep" maxlength="80" value="' + esc(st.preparedBy || "") + '" placeholder="' + esc(t("Örn. Ali Yılmaz")) + '"></div>' +
+      '<div class="field"><label for="opAppr">' + esc(t("Donatan / armatör (onaylayan)")) + '</label><input id="opAppr" maxlength="80" value="' + esc(st.approvedBy || "") + '" placeholder="' + esc(t("Örn. Mehmet Demir")) + '"></div></div>' +
       '<div class="inline" style="margin-top:10px"><div class="field"><label for="opAmt">' + esc(t("Başlangıç kasası (₺)")) + '</label>' + numBox("opAmt", st.opening != null ? num(st.opening) : "", 2, ' data-neg="1"') + ' placeholder="' + esc(num(0)) + '"><span class="help">' + esc(t("Defterin başladığı gün kasadaki para")) + '</span></div>' +
       '<div class="field"><label for="opDate">' + esc(t("Başlangıç tarihi")) + '</label><input id="opDate" type="date" value="' + esc(st.openingDate || "") + '"></div>' +
       '<div class="field"><label for="opLow">' + esc(t("Kasa uyarı sınırı (₺)")) + '</label>' + numBox("opLow", num(+st.lowLimit || 0), 2) + '><span class="help">' + esc(t("Kasa bunun altına inince uyarır. 0 = kapalı")) + '</span></div>' +
@@ -302,10 +308,10 @@
     if (!S.imp) h += '<label class="drop" id="drop" for="file" tabindex="0"><strong>' + esc(t("Fiş takip tablonuzu (.xlsx) seçin")) + '</strong><p>' + esc(WEB ? t("Dosyayı Dosyalar uygulamasından seçin. Aylık sayfaların hepsi birden okunur; defterde zaten olan fişler tekrar eklenmez.") : t("Dosyayı buraya sürükleyip bırakın ya da tıklayıp seçin. Aylık sayfaların hepsi birden okunur; defterde zaten olan fişler tekrar eklenmez.")) + '</p><span class="btn pri">' + esc(t("Dosya seç")) + '</span></label><input id="file" type="file" accept=".xlsx,.xlsm" hidden>';
     else h += viewImport();
     h += '</div>';
-    if (WEB) h += '<div class="panel"><h3>' + esc(t("Kayıt yeri ve yedekler")) + '</h3><p class="lead">' + esc(t("Her değişiklik anında bu telefona kaydedilir ve her gün kendiliğinden bir yedek alınır. Uygulamayı ana ekrandan sildiğinizde ya da Safari’nin site verilerini temizlediğinizde telefondaki kayıtlar da silinir; Google Drive eşitlemesini açık tutun ya da ara ara yedek dosyası alın.")) + '</p>' +
+    if (WEB) h += '<div class="panel" id="yedekPanel"><h3>' + esc(t("Kayıt yeri ve yedekler")) + '</h3><p class="lead">' + esc(t("Her değişiklik anında bu telefona kaydedilir ve her gün kendiliğinden bir yedek alınır. Uygulamayı ana ekrandan sildiğinizde ya da Safari’nin site verilerini temizlediğinizde telefondaki kayıtlar da silinir; Google Drive eşitlemesini açık tutun ya da ara ara yedek dosyası alın.")) + '</p>' +
       '<div class="btns" style="justify-content:flex-start"><button class="btn" id="backupNow">' + esc(t("Yedek dosyası al")) + '</button><label class="btn" for="restoreFile" style="cursor:pointer">' + esc(t("Yedekten geri yükle")) + '</label><input id="restoreFile" type="file" accept=".json,application/json" hidden></div>' +
       '<p class="lead" style="margin:8px 0 0;font-size:13px">' + esc(t("Asıl fiş ve faturaları kâğıt ya da elektronik olarak ayrıca saklayın; programa fotoğraf eklemek, mevzuattaki saklama yükümlülüğünün (ör. VUK m. 253, TTK m. 82) yerine geçmez.")) + '</p></div>';
-    else h += '<div class="panel"><h3>' + esc(t("Kayıt yeri ve yedekler")) + '</h3><p class="lead">' + esc(t("Her değişiklik anında bu bilgisayara kaydedilir ve her gün kendiliğinden bir yedek alınır. Program kapanıp açıldığında kaldığı yerden devam eder.")) + '</p>' +
+    else h += '<div class="panel" id="yedekPanel"><h3>' + esc(t("Kayıt yeri ve yedekler")) + '</h3><p class="lead">' + esc(t("Her değişiklik anında bu bilgisayara kaydedilir ve her gün kendiliğinden bir yedek alınır. Program kapanıp açıldığında kaldığı yerden devam eder.")) + '</p>' +
       '<div class="pathbox">' + esc(S.klasor || "") + '</div>' +
       '<div class="btns" style="justify-content:flex-start"><button class="btn" id="openFolder">' + esc(t("Klasörü aç")) + '</button><button class="btn" id="backupNow">' + esc(t("Şimdi yedek al")) + '</button><label class="btn" for="restoreFile" style="cursor:pointer">' + esc(t("Yedekten geri yükle")) + '</label><input id="restoreFile" type="file" accept=".json" hidden></div>' +
       '<p class="lead" style="margin:12px 0 0;font-size:13px">' + esc(t("Başka bilgisayara taşımak için bu klasörü USB belleğe kopyalayın. Yeni bilgisayarda programı kurup klasörü aynı yere (Belgeler) yapıştırın.")) + '</p>' +
@@ -392,7 +398,7 @@
       if (typeof rawDate === "string" && /\d\s*[-–]\s*\d/.test(rawDate) && !note) note = t("Tarih: {tarih}", { tarih: rawDate.trim() });
       const cat = type === "in" ? "" : (K.catKey(String(cell(row, "cat") ?? "").trim()) || K.guessCat(vendor, desc));
       const pr = cell(row, "pay");
-      const pay = type === "in" ? "" : anyRe(/kart|kredi|card|pos|banka|bank/, pr) ? "kart" : anyRe(/nakit|cash|peşin/, pr) ? "nakit" : "";
+      const pay = type === "in" ? (anyRe(/eft/, pr) ? "eft" : anyRe(/havale|transfer|banka|bank/, pr) ? "havale" : anyRe(/nakit|cash|peşin/, pr) ? "nakit" : "") : anyRe(/kart|kredi|card|pos|banka|bank/, pr) ? "kart" : anyRe(/nakit|cash|peşin/, pr) ? "nakit" : "";
       const rec = { type, date: date || todayISO(), vendor, desc, cat, amount: r2(Math.abs(amount)), note };
       if (pay) rec.pay = pay;
       if (cat === "Yakıt") { const lt = K.parseLt(desc + " " + note); if (lt > 0) rec.lt = lt; }
@@ -454,10 +460,25 @@
     return [...m.values()].sort((a, b) => b.n - a.n || (b.last.date || "").localeCompare(a.last.date || "")).slice(0, 8).map(x => x.last);
   }
   function quickHTML(type) {
-    const ps = quickPicks(type); if (!ps.length) return "";
+    const ps = quickPicks(type);
+    if (type === "in") {
+      const adlar = [...new Set([t("Armatör"), t("Donatan"), ...ps.map(e => e.vendor).filter(Boolean)])].slice(0, 6);
+      return '<div class="quick"><span class="ql">' + esc(t("Kimden geldi? Dokunun, yazılsın")) + '</span>' + adlar.map(a => '<button type="button" class="qchip" data-kimden="' + esc(a) + '">' + esc(a) + '</button>').join("") + '</div>';
+    }
+    if (!ps.length) return "";
     return '<div class="quick"><span class="ql">' + esc(t("Sık kullanılanlar · dokunun, bilgiler dolsun")) + '</span>' + ps.map(e => '<button type="button" class="qchip" data-quick="' + esc(e.id) + '">' + esc(e.vendor || e.desc) + (e.vendor && e.desc ? ' <small>· ' + esc(e.desc) + '</small>' : "") + ' <small>' + esc(e.cur && e.cur !== "TRY" ? fx(e.fxAmount, e.cur) : tl(e.amount)) + '</small></button>').join("") + '</div>';
   }
-  function lastPay() { const s = S.items.filter(e => !isIn(e) && e.pay).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")); return s[0] ? s[0].pay : "nakit"; }
+  function lastPay(type) { const inn = type === "in"; const s = S.items.filter(e => isIn(e) === inn && e.pay).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")); return s[0] ? s[0].pay : (inn ? "havale" : "nakit"); }
+  // How the money moved: a receipt is paid in cash or by card; money coming in arrives by bank transfer, EFT or cash.
+  const PAYS = type => type === "in" ? [["havale", t("Havale")], ["eft", t("EFT")], ["nakit", t("Nakit")]] : [["nakit", t("Nakit")], ["kart", t("Kart")]];
+  function payHTML(type, payV) {
+    const ops = PAYS(type); if (!ops.some(o => o[0] === payV)) payV = lastPay(type);
+    const lbl = type === "in" ? t("Nasıl geldi?") : t("Ödeme şekli");
+    return '<p class="seglbl" style="margin-bottom:4px">' + esc(lbl) + '</p><div class="seg" role="radiogroup" aria-label="' + esc(lbl) + '">' + ops.map(([v, l]) => '<label><input type="radio" name="pay" value="' + v + '"' + (payV === v ? " checked" : "") + '><span>' + esc(l) + '</span></label>').join("") + '</div>';
+  }
+  const formMetin = type => type === "in"
+    ? { kim: t("Kimden geldi (donatan / armatör)"), kimOrn: t("Örn. Armatör"), acOrn: t("Örn. Kasa avansı") }
+    : { kim: t("Şirket / satıcı"), kimOrn: t("Örn. Liman Market"), acOrn: t("Örn. Su ve yoğurt") };
   const sheetTitle = (editing, inn, copy) => editing ? (inn ? t("Gelen parayı düzenle") : t("Fişi düzenle")) : (inn ? t("Kasaya para ekle") : copy ? t("Fişi kopyala") : t("Yeni fiş"));
   function openSheet(id, presetType, copyFrom) {
     if (mustAccept()) return;
@@ -470,7 +491,8 @@
     const cur = v.cur || "TRY";
     const amountShown = v.amount === "" ? "" : (cur !== "TRY" && +v.fxAmount > 0 ? num(v.fxAmount) : num(v.amount));
     const rate = cur !== "TRY" ? (v.fxRate || (S.set.rates || {})[cur] || "") : "";
-    const payV = it ? (it.pay || "") : (v.pay || lastPay());
+    const payV = it ? (it.pay || "") : (v.pay || lastPay(v.type || "out"));
+    const fm = formMetin(v.type || "out");
     const vendors = [...new Set(S.items.map(i => i.vendor).filter(Boolean))].slice(0, 400);
     const showLt = v.type !== "in" && (v.cat === "Yakıt" || +v.lt > 0 || K.guessCat(v.vendor, v.desc) === "Yakıt");
     S.ph = { id: it && it.photo || null, blob: null, preview: null, removed: false };
@@ -481,12 +503,12 @@
       '<div class="grid2">' +
       '<div class="field"><label for="f_amount" id="amtLbl">' + esc(t("Tutar")) + '</label><div class="amtline">' + numBox("f_amount", amountShown, 2) + ' placeholder="' + esc(num(0)) + '"><select id="f_cur" class="cursel" aria-label="' + esc(t("Para birimi")) + '">' + Object.keys(K.CUR).map(c => '<option value="' + c + '"' + (c === cur ? " selected" : "") + '>' + K.CUR[c].sym + ' ' + c + '</option>').join("") + '</select></div></div>' +
       '<div class="field"><label for="f_date">' + esc(t("Tarih")) + '</label><input id="f_date" type="date" value="' + esc(v.date) + '"></div>' +
-      '<div class="field full" id="rateWrap"' + (cur === "TRY" ? " hidden" : "") + '><label for="f_rate" id="rateLbl">' + esc(t("Kur (1 {cur} = ? ₺)", { cur })) + '</label>' + numBox("f_rate", K.dec(rate), 4) + ' placeholder="' + esc(t("ör. 37,85")) + '"><div class="fxline" id="fxLine"></div></div>' +
-      '<div class="field full"><label for="f_vendor">' + esc(t("Şirket / kimden")) + '</label><input id="f_vendor" list="vendlist" maxlength="120" autocomplete="off" value="' + esc(v.vendor) + '" placeholder="' + esc(t("ör. market, akaryakıt, marangoz")) + '"><datalist id="vendlist">' + vendors.map(c => '<option value="' + esc(c) + '">').join("") + '</datalist></div>' +
-      '<div class="field full"><label for="f_desc">' + esc(t("Açıklama")) + '</label><input id="f_desc" maxlength="200" autocomplete="off" value="' + esc(v.desc) + '" placeholder="' + esc(t("ör. Su, yoğurt")) + '"></div>' +
+      '<div class="field full" id="rateWrap"' + (cur === "TRY" ? " hidden" : "") + '><label for="f_rate" id="rateLbl">' + esc(t("Kur (1 {cur} = ? ₺)", { cur })) + '</label>' + numBox("f_rate", K.dec(rate), 4) + ' placeholder="' + esc(t("Örn. 37,85")) + '"><div class="fxline" id="fxLine"></div></div>' +
+      '<div class="field full"><label for="f_vendor" id="vendLbl">' + esc(fm.kim) + '</label><input id="f_vendor" list="vendlist" maxlength="120" autocomplete="off" value="' + esc(v.vendor) + '" placeholder="' + esc(fm.kimOrn) + '"><datalist id="vendlist">' + vendors.map(c => '<option value="' + esc(c) + '">').join("") + '</datalist></div>' +
+      '<div class="field full"><label for="f_desc">' + esc(t("Açıklama")) + '</label><input id="f_desc" maxlength="200" autocomplete="off" value="' + esc(v.desc) + '" placeholder="' + esc(fm.acOrn) + '"></div>' +
       '<div class="field" id="catWrap"' + (v.type === "in" ? " hidden" : "") + '><label for="f_cat">' + esc(t("Kategori")) + '</label><input id="f_cat" list="catlist" autocomplete="off" value="' + esc(K.catLabel(v.cat)) + '" placeholder="' + esc(t("Kendiliğinden önerilir")) + '"><datalist id="catlist">' + allCats().map(c => '<option value="' + esc(K.catLabel(c)) + '">').join("") + '</datalist></div>' +
-      '<div class="field" id="ltWrap"' + (showLt ? "" : " hidden") + '><label for="f_lt">' + esc(t("Yakıt (litre)")) + '</label>' + numBox("f_lt", +v.lt > 0 ? K.qty(v.lt) : "", 2) + ' placeholder="' + esc(t("ör. 900")) + '"><div class="fxline" id="ltLine"></div></div>' +
-      '<div class="full" id="payWrap"' + (v.type === "in" ? " hidden" : "") + '><p class="seglbl" style="margin-bottom:4px">' + esc(t("Ödeme şekli")) + '</p><div class="seg" role="radiogroup" aria-label="' + esc(t("Ödeme şekli")) + '"><label><input type="radio" name="pay" value="nakit"' + (payV === "nakit" ? " checked" : "") + '><span>' + esc(t("Nakit")) + '</span></label><label><input type="radio" name="pay" value="kart"' + (payV === "kart" ? " checked" : "") + '><span>' + esc(t("Kart")) + '</span></label></div></div>' +
+      '<div class="field" id="ltWrap"' + (showLt ? "" : " hidden") + '><label for="f_lt">' + esc(t("Yakıt (litre)")) + '</label>' + numBox("f_lt", +v.lt > 0 ? K.qty(v.lt) : "", 2) + ' placeholder="' + esc(t("Örn. 900")) + '"><div class="fxline" id="ltLine"></div></div>' +
+      '<div class="full" id="payWrap">' + payHTML(v.type || "out", payV) + '</div>' +
       '<div class="field full"><label for="f_note">' + esc(t("Not")) + '</label><textarea id="f_note" maxlength="1000">' + esc(v.note) + '</textarea></div>' +
       '<div class="field full"><label>' + esc(t("Fiş fotoğrafı")) + ' <span style="font-weight:400">' + esc(t("(isteğe bağlı)")) + '</span></label><div class="ph" id="phBox">' + phBoxHTML() + '</div></div>' +
       '</div><div class="err-t" id="ferr"></div>' +
@@ -540,7 +562,8 @@
     const body = { id: old ? old.id : newId(), type, date, vendor, desc, cat: type === "in" ? "" : (K.catKey(g("f_cat").value) || K.guessCat(vendor, desc)), amount: r2(typed * rate), note: g("f_note").value.trim(), createdAt: old ? old.createdAt || now : now, updatedAt: K.damga(old && old.updatedAt) };
     if (old && old.src) body.src = old.src; if (old && old.ord != null) body.ord = old.ord;
     if (cur !== "TRY") { body.cur = cur; body.fxAmount = r2(typed); body.fxRate = rate; }
-    if (type === "out") { const p = document.querySelector('input[name="pay"]:checked'); if (p) body.pay = p.value; const lt = toNum(g("f_lt").value); if (lt > 0 && !g("ltWrap").hidden) body.lt = lt; }
+    { const p = document.querySelector('input[name="pay"]:checked'); if (p) body.pay = p.value; }
+    if (type === "out") { const lt = toNum(g("f_lt").value); if (lt > 0 && !g("ltWrap").hidden) body.lt = lt; }
     const sb = g("saveBtn"); sb.disabled = true; sb.textContent = t("Kaydediliyor…");
     const before = curBalance();
     try {
@@ -770,7 +793,7 @@
       const r = 9 + ix, inn = isIn(e);
       put("A" + r, serial(e.date), "tarih"); put("B" + r, e.vendor || "", "metin"); put("C" + r, e.desc || "", "metin");
       put("D" + r, inn ? null : +e.amount || 0, "para"); put("E" + r, inn ? +e.amount || 0 : null, "paragelen");
-      put("F" + r, inn ? "" : K.payName(e.pay), "metin"); put("G" + r, inn ? t("Gelen para") : K.catLabel(e.cat), "metin");
+      put("F" + r, K.payName(e.pay), "metin"); put("G" + r, inn ? t("Gelen para") : K.catLabel(e.cat), "metin");
       put("H" + r, [K.amountNote(e), e.note, e.photo ? t("Fiş fotoğrafı var") : ""].filter(Boolean).join(" · "), "metin");
     });
     const first = 9, last = Math.max(first, 8 + its.length), tot = last + 1, kal = last + 2;
@@ -783,6 +806,202 @@
       birlesik: ["A1:C1", "A2:C2", "E1:F1", "E2:F2", "A4:B4", "A5:B5", "A8:D8", "A" + tot + ":C" + tot, "A" + kal + ":D" + kal], hucreler: H };
   }
 
+
+
+  /* ---------------- sign-in first: the book opens after the Google account is connected (later it also works offline) ---------------- */
+  const girisGerekli = () => S.mode === "live" && !S.terms && !!(S.senk && S.senk.hazir && S.senk.zorunlu && !S.senk.bagli);
+  // signed in, but this Google account may not use Kasa Jurnali (closed, time over) or it is still being checked
+  const erisimEngeli = () => S.mode === "live" && !S.terms && !!(S.senk && S.senk.bagli && S.senk.lisansAcik && !S.senk.izinli);
+  const kilitli = () => girisGerekli() || erisimEngeli();
+  const bugunISO = () => todayISO();
+  function kalanGun() {
+    const L = S.senk && S.senk.lisans;
+    if (!L || !L.izin || !L.bitis || L.kapali) return null;
+    return Math.round((new Date(L.bitis + "T12:00:00") - new Date(bugunISO() + "T12:00:00")) / 86400000);
+  }
+  function erisimHTML() {
+    const b = S.senk, L = b.lisans;
+    const kutu = (baslik, govde, dugmeler) => '<div class="giris"><img class="glogo" src="ikon.png" alt=""><h2>' + esc(baslik) + '</h2>' + govde + (dugmeler ? '<div class="gdugme">' + dugmeler + '</div>' : "") + (b.hesap ? '<p class="small">' + esc(t("Oturum açık: {hesap}", { hesap: b.hesap })) + '</p>' : "") + '</div>';
+    if (!L && !b.lisansHata) return kutu(t("Erişim denetleniyor…"), '<p class="lead"><span class="spin"></span>' + esc(t("Google hesabınızın Kasa Jurnali erişimi denetleniyor.")) + '</p>', "");
+    const dene = '<button type="button" class="btn pri" id="erisimDene">' + esc(t("Yeniden dene")) + '</button>';
+    const cik = '<button type="button" class="btn" id="erisimCikis">' + esc(t("Başka hesapla oturum aç")) + '</button>';
+    const yedek = '<button type="button" class="btn" id="erisimYedek">' + esc(t("Yedek dosyası al")) + '</button>';
+    const verim = '<p class="small">' + esc(t("Kayıtlarınız silinmedi: bu cihazda ve Google Drive’ınızda duruyor. Erişim açılınca kaldığınız yerden devam edersiniz.")) + '</p>';
+    if (!L) return kutu(t("Erişim denetlenemedi"), '<p class="lead">' + esc(b.lisansHata) + ' ' + esc(t("İnternet bağlantınızı kontrol edip yeniden deneyin.")) + '</p>', dene + cik);
+    const mesaj = L.mesaj ? '<div class="note"><span><b>' + esc(t("Kasa Jurnali’nin notu")) + '</b>' + esc(L.mesaj) + '</span></div>' : "";
+    if (L.izin && L.onbellek && !(L.bitis && L.bitis < bugunISO())) return kutu(t("İnternet bağlantısı gerekiyor"), '<p class="lead">' + esc(t("Kasa Jurnali uzun süredir erişiminizi denetleyemedi. İnternete bağlanıp yeniden deneyin.")) + '</p>' + verim, dene + yedek);
+    const baslik = L.durum === "kapali" ? t("Hesabınız kullanıma kapalı") : L.deneme ? t("Deneme süreniz doldu") : t("Kullanım süreniz doldu");
+    const acik = L.durum === "kapali" ? t("Bu Google hesabıyla Kasa Jurnali şu an kullanılamıyor.") : t("Kasa Jurnali’yi {tarih} tarihine kadar kullanabiliyordunuz.", { tarih: dmy(L.bitis) });
+    return kutu(baslik, '<p class="lead">' + esc(acik) + ' ' + esc(t("Kullanmaya devam etmek için Kasa Jurnali ile iletişime geçin.")) + '</p>' + mesaj + verim, dene + yedek + cik);
+  }
+  const GOOGLE_G = '<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
+  function girisHTML() {
+    return '<div class="giris"><img class="glogo" src="ikon.png" alt=""><h2>' + esc(t("Kasa Jurnali’ye hoş geldiniz")) + '</h2>' +
+      '<p class="lead">' + esc(t("Başlamak için Google hesabınızla oturum açın. Kayıtlarınız Google Drive’ınızda yalnızca Kasa Jurnali’nin görebildiği gizli bir klasörde saklanır; telefonda ve bilgisayarda aynı defteri kullanırsınız.")) + '</p>' +
+      (S.gbag ? '<div class="gkutu">' + gAkisHTML(S.gbag) + '</div>' : '<button type="button" class="btn gbtn" id="gBagla">' + GOOGLE_G + '<span>' + esc(t("Google ile oturum aç")) + '</span></button>') +
+      '<p class="small">' + esc(t("İlk girişte internet gerekir; sonra internet olmadan da çalışır. Google parolanız Kasa Jurnali’ye girilmez.")) + '</p>' +
+      (S.senk && S.senk.lisansAcik ? '<p class="small">' + esc(t("Oturum açtığınızda Google hesabınızın e-posta adresi, giriş tarihleri, cihaz türü ve uygulama sürümü yalnızca erişim yönetimi (deneme süresi, kullanım hakkı) için Kasa Jurnali’ye kaydedilir. Kayıtlarınız Kasa Jurnali’ye gönderilmez. Ayrıntılar Gizlilik Bildirimi’nde.")) + ' <a href="#" data-yasal-ac>' + esc(t("Gizlilik Bildirimi")) + '</a></p>' : "") + langSwitchHTML() + '</div>';
+  }
+  // after the first sign-in: the boat's details, unless they came from another device
+  function openTekne() {
+    const st = S.set;
+    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><form class="sheet" id="tekForm" role="dialog" aria-modal="true" aria-labelledby="sh" novalidate><h3 id="sh">' + esc(t("Tekne bilgileri")) + '</h3>' +
+      '<p class="lead" style="margin:0 0 12px">' + esc(t("Bu bilgiler ekranın üstünde ve raporlarda görünür. Sonra Ayarlar’dan değiştirebilirsiniz.")) + '</p><div class="grid2">' +
+      '<div class="field full"><label for="tk_ad">' + esc(t("Tekne adı (ya da şirket, ev)")) + '</label><input id="tk_ad" maxlength="80" value="' + esc(st.name || "") + '" placeholder="' + esc(t("Örn. M/Y Deniz Yıldızı")) + '"></div>' +
+      '<div class="field"><label for="tk_kap">' + esc(t("Kaptan (raporu hazırlayan)")) + '</label><input id="tk_kap" maxlength="80" value="' + esc(st.preparedBy || "") + '" placeholder="' + esc(t("Örn. Ali Yılmaz")) + '"></div>' +
+      '<div class="field"><label for="tk_don">' + esc(t("Donatan / armatör (onaylayan)")) + '</label><input id="tk_don" maxlength="80" value="' + esc(st.approvedBy || "") + '" placeholder="' + esc(t("Örn. Mehmet Demir")) + '"></div>' +
+      '<div class="field"><label for="tk_kasa">' + esc(t("Başlangıç kasası (₺)")) + '</label>' + numBox("tk_kasa", st.opening != null ? num(st.opening) : "", 2, ' data-neg="1"') + ' placeholder="' + esc(num(0)) + '"></div>' +
+      '<div class="field"><label for="tk_tarih">' + esc(t("Başlangıç tarihi")) + '</label><input id="tk_tarih" type="date" value="' + esc(st.openingDate || todayISO()) + '"></div>' +
+      '</div><div class="err-t" id="tkerr"></div><div class="acts"><button type="button" class="btn" id="closeSheet">' + esc(t("Sonra")) + '</button><div class="r"><button type="submit" class="btn pri" id="tkKaydet">' + esc(t("Kaydet ve başla")) + '</button></div></div></form></div>';
+    setTimeout(() => { const f = $("#tk_ad"); if (f) f.focus(); }, 50);
+  }
+  async function tekneKaydet() {
+    const ad = $("#tk_ad").value.trim(), kv = $("#tk_kasa").value.trim(), kasa = kv ? toNum(kv) : null;
+    if (!ad) { $("#tkerr").textContent = t("Tekne adını yazın."); $("#tk_ad").focus(); return; }
+    if (kv && isNaN(kasa)) { $("#tkerr").textContent = t("Başlangıç kasasını rakamla yazın."); return; }
+    const prev = JSON.stringify(S.set);
+    Object.assign(S.set, { name: ad, preparedBy: $("#tk_kap").value.trim(), approvedBy: $("#tk_don").value.trim(), opening: kasa == null ? S.set.opening : r2(kasa), openingDate: $("#tk_tarih").value || S.set.openingDate || todayISO() });
+    try { await persistSettings(); closeSheet(); render(); toast(t("Tekne bilgileri kaydedildi. İlk fişi ekleyebilirsiniz.")); }
+    catch (e) { S.set = JSON.parse(prev); $("#tkerr").textContent = e.message; }
+  }
+
+  /* ---------------- access line and the owner's control centre (yonetim/Kod.gs) ---------------- */
+  function erisimSatiri() {
+    const L = S.senk && S.senk.lisans;
+    if (!L || L.kapali || !S.senk.lisansAcik) return "";
+    if (L.yonetici) return t("Yönetici · süresiz");
+    if (!L.izin) return "";
+    const tur = L.deneme ? t("Deneme") : t("Açık");
+    return L.bitis ? t("{tur} · {tarih} tarihine kadar", { tur, tarih: dmy(L.bitis) }) : t("{tur} · süresiz", { tur });
+  }
+  const YDURUM = { deneme: ["Deneme", "dene"], acik: ["Açık", "acik"], "suresi-doldu": ["Süresi doldu", "doldu"], kapali: ["Kapalı", "kapali"] };
+  const gunFark = ymd => Math.round((new Date(ymd + "T12:00:00") - new Date(todayISO() + "T12:00:00")) / 86400000);
+  function gunEkleISO(ymd, gun, ay) { const d = new Date(ymd + "T12:00:00"); if (ay) d.setMonth(d.getMonth() + ay); d.setDate(d.getDate() + (gun || 0)); return d.toISOString().slice(0, 10); }
+  async function yonYukle(zorla) {
+    S.yon = S.yon || { filtre: "hepsi", ara: "" };
+    if (S.yon.veri && !zorla) return;
+    S.yon.yukleniyor = true; S.yon.hata = "";
+    if (S.tab === "yonetim") render();
+    try { S.yon.veri = await KJSenk.yonetim({ islem: "liste" }); }
+    catch (e) { S.yon.hata = e.message; }
+    S.yon.yukleniyor = false;
+    if (S.tab === "yonetim" && !modalOpen()) render();
+  }
+  function viewYonetim() {
+    const Y = S.yon || {}, V = Y.veri;
+    let h = '<div class="panel"><h3>' + esc(t("Yönetim merkezi")) + '</h3><p class="lead">' + esc(t("Kasa Jurnali’de oturum açan Google hesapları. Birini kapatabilir, süre verebilir ya da süresiz açabilirsiniz. Değişiklik, kişi uygulamayı yeniden açınca ya da en geç 6 saat içinde geçerli olur.")) + '</p>';
+    if (Y.hata) h += '<div class="note err"><span><b>' + esc(t("Liste alınamadı")) + '</b>' + esc(Y.hata) + '</span><span class="btns"><button class="btn sm" id="yYenile">' + esc(t("Yeniden dene")) + '</button></span></div>';
+    if (!V) return h + (Y.hata ? "" : '<p class="small"><span class="spin"></span>' + esc(t("Liste alınıyor…")) + '</p>') + '</div>';
+    const l = V.kullanicilar || [], say = k => l.filter(x => x.kod === k).length;
+    const sayac = [["hepsi", t("Toplam"), l.length], ["acik", t("Açık"), say("acik")], ["deneme", t("Deneme"), say("deneme")], ["suresi-doldu", t("Süresi doldu"), say("suresi-doldu")], ["kapali", t("Kapalı"), say("kapali")]];
+    h += '<div class="ysay">' + sayac.map(([k, l2, n]) => '<button type="button" class="ykutu' + (Y.filtre === k ? " on" : "") + '" data-yfiltre="' + k + '"><b>' + n + '</b><span>' + esc(l2) + '</span></button>').join("") + '</div>';
+    h += '<div class="ybar"><input id="yAra" type="search" placeholder="' + esc(t("E-posta ara")) + '" value="' + esc(Y.ara || "") + '" autocomplete="off"><button type="button" class="btn pri" id="yEkle">' + esc(t("Kişi ekle")) + '</button><button type="button" class="btn" id="yYenile"' + (Y.yukleniyor ? " disabled" : "") + '>' + esc(t("Yenile")) + '</button></div>';
+    const q = (Y.ara || "").trim().toLowerCase();
+    const g = l.filter(x => (Y.filtre === "hepsi" || x.kod === Y.filtre) && (!q || x.eposta.includes(q) || (x.not || "").toLowerCase().includes(q)))
+      .sort((a, b) => (b.son || b.ilk || "").localeCompare(a.son || a.ilk || "") || a.eposta.localeCompare(b.eposta));
+    if (!g.length) h += '<p class="small" style="margin:12px 0 0">' + esc(l.length ? t("Bu süzgece uyan kişi yok.") : t("Henüz kimse oturum açmadı.")) + '</p>';
+    else h += '<div class="ylist">' + g.map(x => {
+      const d = YDURUM[x.kod] || YDURUM.acik, kg = x.bitis ? gunFark(x.bitis) : null;
+      const bit = x.bitis ? t("Bitiş {tarih}", { tarih: dmy(x.bitis) }) + (kg >= 0 ? " · " + t("{n} gün kaldı", { n: kg }) : "") : t("Süresiz");
+      const son = x.son ? t("Son giriş {zaman}", { zaman: K.dateTime(new Date(x.son)) }) : t("Henüz giriş yapmadı");
+      return '<button type="button" class="yrow" data-ykisi="' + esc(x.eposta) + '"><span class="ybil"><b>' + esc(x.eposta) + '</b><span>' + esc(bit) + ' · ' + esc(son) + (x.cihaz ? ' · ' + esc(x.cihaz === "iphone" ? "iPhone" : x.cihaz === "windows" ? "Windows" : x.cihaz) : "") + (x.surum ? ' ' + esc(x.surum) : "") + '</span>' + (x.not ? '<span class="ynot">' + esc(x.not) + '</span>' : "") + '</span><span class="yrozet ' + d[1] + '">' + esc(t(d[0])) + '</span></button>';
+    }).join("") + '</div>';
+    h += '</div>';
+    const A = V.ayar || { denemeGun: 30, yeniDurum: "Deneme" };
+    h += '<div class="panel" id="yAyarPanel"><h3>' + esc(t("Yeni kullanıcılar")) + '</h3><p class="lead">' + esc(t("Biri ilk kez oturum açtığında ne olsun?")) + '</p>' +
+      '<div class="yayar">' + [["Deneme", t("Deneme süresi verilsin")], ["Kapalı", t("Ben açana kadar kapalı kalsın")], ["Açık", t("Süresiz açık olsun")]].map(([v, l2]) => '<label class="check"><input type="radio" name="yYeni" value="' + v + '"' + (A.yeniDurum === v ? " checked" : "") + '> <span>' + esc(l2) + '</span></label>').join("") + '</div>' +
+      '<div class="field" style="max-width:220px;margin-top:8px"><label for="yGun">' + esc(t("Deneme süresi (gün)")) + '</label><input id="yGun" type="number" min="1" max="3650" inputmode="numeric" value="' + esc(A.denemeGun) + '"></div>' +
+      '<div class="btns" style="justify-content:flex-start;margin-top:10px"><button type="button" class="btn pri" id="yAyarKaydet">' + esc(t("Kaydet")) + '</button></div>' +
+      '<p class="small" style="margin:12px 0 0">' + esc(t("Liste Google Drive’ınızdaki “Kasa Jurnali Yönetim” tablosunda durur; oradan da düzenleyebilirsiniz.")) + '</p></div>';
+    return h;
+  }
+  function openYKisi(eposta) {
+    const V = S.yon && S.yon.veri, x = eposta ? (V.kullanicilar || []).find(k => k.eposta === eposta) : null;
+    const v = x || { eposta: "", durum: "Açık", bitis: "", mesaj: "", not: "" };
+    const ilk = x ? (x.ilk ? t("İlk giriş {zaman}", { zaman: K.dateTime(new Date(x.ilk)) }) + " · " : "") + t("{n} giriş", { n: x.sayi || 0 }) : "";
+    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><form class="sheet" id="yForm" role="dialog" aria-modal="true" aria-labelledby="sh" novalidate><h3 id="sh">' + esc(x ? x.eposta : t("Kişi ekle")) + '</h3>' + (ilk ? '<p class="small" style="margin:-4px 0 12px">' + esc(ilk) + '</p>' : "") +
+      '<div class="grid2">' +
+      (x ? "" : '<div class="field full"><label for="y_eposta">' + esc(t("Google hesabı (e-posta)")) + '</label><input id="y_eposta" type="email" maxlength="254" autocomplete="off" placeholder="' + esc(t("Örn. ali.yilmaz@gmail.com")) + '"></div>') +
+      '<div class="full"><p class="seglbl" style="margin-bottom:4px">' + esc(t("Durum")) + '</p><div class="seg" role="radiogroup">' + ["Açık", "Deneme", "Kapalı"].map(d => '<label><input type="radio" name="y_durum" value="' + d + '"' + (v.durum === d ? " checked" : "") + '><span>' + esc(t(d)) + '</span></label>').join("") + '</div></div>' +
+      '<div class="field full"><label for="y_bitis">' + esc(t("Son kullanım günü (boş = süresiz)")) + '</label><div class="ybitis"><input id="y_bitis" type="date" value="' + esc(v.bitis || "") + '"><button type="button" class="btn sm" data-ysure="30g">' + esc(t("+30 gün")) + '</button><button type="button" class="btn sm" data-ysure="3a">' + esc(t("+3 ay")) + '</button><button type="button" class="btn sm" data-ysure="1y">' + esc(t("+1 yıl")) + '</button><button type="button" class="btn sm" data-ysure="yok">' + esc(t("Süresiz")) + '</button></div></div>' +
+      '<div class="field full"><label for="y_mesaj">' + esc(t("Kişiye gösterilecek not (erişim kapalıyken)")) + '</label><input id="y_mesaj" maxlength="500" value="' + esc(v.mesaj || "") + '" placeholder="' + esc(t("Örn. Ödeme bekleniyor.")) + '"></div>' +
+      '<div class="field full"><label for="y_not">' + esc(t("Kendi notunuz (yalnızca siz görürsünüz)")) + '</label><input id="y_not" maxlength="500" value="' + esc(v.not || "") + '" placeholder="' + esc(t("Örn. M/Y Deniz, aylık")) + '"></div>' +
+      '</div><div class="err-t" id="yerr"></div><div class="acts">' + (x ? '<button type="button" class="btn danger" id="ySil" data-eposta="' + esc(x.eposta) + '">' + esc(t("Kaydı sil")) + '</button>' : "") + '<div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Vazgeç")) + '</button><button type="submit" class="btn pri" id="yKaydet">' + esc(t("Kaydet")) + '</button></div></div></form></div>';
+    S.yKisi = x ? x.eposta : "";
+  }
+  function ySure(k) {
+    const f = $("#y_bitis"); if (!f) return;
+    if (k === "yok") { f.value = ""; return; }
+    const bugun = todayISO(), taban = f.value && f.value >= bugun ? f.value : bugun;
+    f.value = k === "30g" ? gunEkleISO(taban, 30) : k === "3a" ? gunEkleISO(taban, 0, 3) : gunEkleISO(taban, 0, 12);
+    const acik = document.querySelector('input[name="y_durum"][value="Açık"]'), kap = document.querySelector('input[name="y_durum"]:checked');
+    if (acik && kap && kap.value === "Kapalı") acik.checked = true;
+  }
+  async function yKaydet() {
+    const eposta = S.yKisi || ($("#y_eposta").value || "").trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(eposta)) { $("#yerr").textContent = t("E-posta adresini kontrol edin."); return; }
+    const d = document.querySelector('input[name="y_durum"]:checked');
+    const b = $("#yKaydet"); b.disabled = true;
+    try {
+      S.yon.veri = await KJSenk.yonetim({ islem: "kaydet", eposta, durum: d ? d.value : "Açık", bitis: $("#y_bitis").value || "", mesaj: $("#y_mesaj").value.trim(), not: $("#y_not").value.trim() });
+      closeSheet(); render(); toast(t("{eposta} kaydedildi.", { eposta }));
+    } catch (e) { b.disabled = false; $("#yerr").textContent = e.message; }
+  }
+  async function ySil(b) {
+    if (!b.dataset.emin) { b.dataset.emin = "1"; b.textContent = t("Silmek için yeniden dokunun"); return; }
+    b.disabled = true;
+    try { S.yon.veri = await KJSenk.yonetim({ islem: "sil", eposta: b.dataset.eposta }); closeSheet(); render(); toast(t("Kayıt silindi.")); }
+    catch (e) { b.disabled = false; $("#yerr").textContent = e.message; }
+  }
+  async function yAyarKaydet(b) {
+    const y = document.querySelector('input[name="yYeni"]:checked'), gun = parseInt($("#yGun").value, 10);
+    if (!(gun >= 1 && gun <= 3650)) { toast(t("Deneme süresi 1 ile 3650 gün arasında olmalı.")); return; }
+    b.disabled = true;
+    try { S.yon.veri = await KJSenk.yonetim({ islem: "ayar", yeniDurum: y ? y.value : "Deneme", denemeGun: gun }); render(); toast(t("Ayar kaydedildi.")); }
+    catch (e) { b.disabled = false; toast(e.message); }
+  }
+
+  /* ---------------- reports page ---------------- */
+  function viewRapor() {
+    const ms = K.monthsWithData(S.items).slice().reverse();
+    let h = '<div class="panel"><h3>' + esc(t("Raporlar")) + '</h3><p class="lead">' + esc(t("Bir ay seçip imza alanlı PDF kasa raporu ya da formüllü Excel tablosu alın.")) + '</p>';
+    if (!ms.length) return h + '<p class="small" style="margin:0">' + esc(t("Rapora girecek fiş yok.")) + '</p></div>';
+    h += '<div class="rlist">' + ms.map(m => { const k = kasaFor(m); return '<div class="rrow"><div class="rbil"><b>' + esc(monthLabel(m)) + (isClosed(m) ? ' <span class="mtag">' + esc(t("Kapandı")) + '</span>' : "") + '</b><span>' + esc(t("Harcama {tutar}", { tutar: tl(k.out) })) + ' · ' + esc(t("Gelen {tutar}", { tutar: tl(k.in) })) + ' · ' + esc(t("Kalan kasa")) + ' ' + tl(k.kalan) + '</span></div><div class="btns"><button type="button" class="btn sm" data-rapor="pdf" data-ay="' + m + '">PDF</button><button type="button" class="btn sm" data-rapor="xlsx" data-ay="' + m + '">Excel</button></div></div>'; }).join("") +
+      (ms.length > 1 ? '<div class="rrow"><div class="rbil"><b>' + esc(t("Tüm aylar")) + '</b><span>' + esc(monthLabel(ms[ms.length - 1]) + " – " + monthLabel(ms[0])) + '</span></div><div class="btns"><button type="button" class="btn sm" data-rapor="pdf" data-ay="all">PDF</button><button type="button" class="btn sm" data-rapor="xlsx" data-ay="all">Excel</button></div></div>' : "") + '</div>';
+    return h + '</div>';
+  }
+
+  /* ---------------- menu ---------------- */
+  const MI = {
+    ev: '<path d="M3 11l9-7 9 7v9H5z"/><path d="M9 20v-6h6v6"/>', ozet: '<path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/>', rapor: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 12h7M9 16h7M9 8h4"/>',
+    tekne: '<path d="M3 17l2 3h14l2-3z"/><path d="M12 3v12M12 4l6 9H6z"/>', bulut: '<path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5z"/>',
+    excel: '<path d="M4 4h16v16H4z"/><path d="M4 9h16M9 4v16"/>', yedek: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>', ayar: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
+    kitap: '<path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4z"/><path d="M20 4h-6a3 3 0 0 0-3 3"/><path d="M20 4v14h-6"/>', yasal: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>', cikis: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>',
+    kisiler: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14.2c2.9.2 5 2.6 5 5.8"/>'
+  };
+  const mik = n => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + MI[n] + '</svg>';
+  function openMenu() {
+    if (kilitli() || mustAccept()) return;
+    const b = S.senk || {};
+    const ogeler = [["list", "ev", t("Ana sayfa")], ["sum", "ozet", t("Özet")], ["rapor", "rapor", t("Raporlar")], ["io#tekPanel", "tekne", t("Tekne bilgileri")],
+      ["io#senkPanel", "bulut", t("Google hesabı ve eşitleme")], ["io#importPanel", "excel", t("Excel’den içe aktar")], ["io#yedekPanel", "yedek", t("Yedekler")], ["io", "ayar", t("Ayarlar")],
+      ["#kilavuz", "kitap", t("Kullanım kılavuzu")], ["#yasal", "yasal", t("Yasal bilgiler")]];
+    if (b.lisans && b.lisans.yonetici) ogeler.splice(3, 0, ["yonetim", "kisiler", t("Yönetim merkezi")]);
+    if (b.bagli) ogeler.push(["#cikis", "cikis", t("Oturumu kapat")]);
+    $("#sheetHost").innerHTML = '<div class="scrim cekmece" id="scrim"><nav class="drawer" aria-label="' + esc(t("Menü")) + '"><div class="dbas"><img src="ikon.png" alt=""><div><b>Kasa Jurnali</b><span>' + esc(S.set.name || "") + '</span>' + (b.bagli && b.hesap ? '<span class="dhesap">' + esc(b.hesap) + '</span>' : "") + (erisimSatiri() ? '<span class="dhesap">' + esc(erisimSatiri()) + '</span>' : "") + '</div></div>' +
+      ogeler.map(([k, i, l]) => '<button type="button" class="ditem' + (k === S.tab ? " on" : "") + '" data-menu="' + k + '">' + mik(i) + '<span>' + esc(l) + '</span></button>').join("") +
+      '<div class="dsurum">Kasa Jurnali ' + esc(SURUM) + '</div></nav></div>';
+  }
+  function menuSec(k) {
+    closeSheet();
+    if (k === "#kilavuz") { openDoc("kilavuz"); return; }
+    if (k === "#yasal") { openTerms("view"); return; }
+    if (k === "#cikis") { openSenkOff(); return; }
+    const [tab, yer] = k.split("#");
+    S.tab = tab; if (tab === "yonetim") yonYukle(); render();
+    if (yer) setTimeout(() => { const el = document.getElementById(yer); if (el) el.scrollIntoView({ block: "start", behavior: "smooth" }); }, 30);
+    else window.scrollTo({ top: 0 });
+  }
 
   /* ---------------- Google Drive synchronisation (engine in senk.js) ---------------- */
   function senkDurumMetni(b) {
@@ -798,22 +1017,24 @@
     if (!b.hazir) return h + '<p class="lead" style="margin:0">' + esc(t("Bu sürümde Google Drive eşitlemesi henüz etkin değil.")) + '</p></div>';
     if (b.bagli) {
       h += '<p class="lead">' + esc(t("Kayıtlarınız ve fiş fotoğrafları, Google Drive’ınızdaki gizli uygulama klasörü üzerinden diğer cihazlarınızla kendiliğinden eşitlenir. İnternet yokken yapılan değişiklikler, bağlantı gelince gönderilir.")) + '</p>' +
-        '<div class="kv senkkv"><span>' + esc(t("Bağlı hesap")) + '</span><b>' + esc(b.hesap || t("Google hesabı")) + '</b><span>' + esc(t("Durum")) + '</span><b>' + esc(senkDurumMetni(b)) + '</b></div>' +
+        '<div class="kv senkkv"><span>' + esc(t("Bağlı hesap")) + '</span><b>' + esc(b.hesap || t("Google hesabı")) + '</b><span>' + esc(t("Durum")) + '</span><b>' + esc(senkDurumMetni(b)) + '</b>' + (erisimSatiri() ? '<span>' + esc(t("Kullanım")) + '</span><b>' + esc(erisimSatiri()) + '</b>' : "") + '</div>' +
         (b.durum === "hata" && b.hata ? '<p class="err-t" style="margin:8px 0 0">' + esc(b.hata) + '</p>' : "") +
-        '<div class="btns" style="justify-content:flex-start;margin-top:12px"><button class="btn pri" id="senkNow"' + (b.calisiyor ? " disabled" : "") + '>' + esc(t("Şimdi eşitle")) + '</button><button class="btn" id="senkOff">' + esc(t("Bağlantıyı kes")) + '</button></div>';
+        '<div class="btns" style="justify-content:flex-start;margin-top:12px"><button class="btn pri" id="senkNow"' + (b.calisiyor ? " disabled" : "") + '>' + esc(t("Şimdi eşitle")) + '</button><button class="btn" id="senkOff">' + esc(b.zorunlu ? t("Oturumu kapat") : t("Bağlantıyı kes")) + '</button></div>';
     } else if (S.gbag) {
-      const G = S.gbag;
-      h += '<ol class="gsteps"><li>' + esc(t("Bu telefonda ya da herhangi bir bilgisayarda şu adresi açın:")) + ' <a href="' + esc(G.adres) + '" target="_blank" rel="noopener"><b>' + esc(G.adres.replace(/^https?:\/\/(www\.)?/, "")) + '</b></a></li>' +
-        '<li>' + esc(t("Şu kodu yazın:")) + '<span class="gkod" id="gKod">' + esc(G.kod) + '</span><button type="button" class="btn sm" id="gKopya">' + esc(t("Kodu kopyala")) + '</button></li>' +
-        '<li>' + esc(t("Google hesabınızı seçin ve Kasa Jurnali’ye izin verin. Bu ekran kendiliğinden devam eder.")) + '</li></ol>' +
-        '<p class="small" id="gDurum"><span class="spin"></span>' + esc(G.mesaj || t("Onay bekleniyor…")) + '</p>' +
-        '<div class="btns" style="justify-content:flex-start"><button class="btn" id="gVazgec">' + esc(t("Vazgeç")) + '</button></div>';
+      h += gAkisHTML(S.gbag);
     } else {
       h += '<p class="lead">' + esc(t("Telefonda ve bilgisayarda aynı defteri kullanmak için Google hesabınızı bağlayın. Kayıtlar Google Drive’ınızda yalnızca Kasa Jurnali’nin görebildiği gizli bir klasörde tutulur; Drive’daki diğer dosyalarınıza erişilmez.")) + '</p>' +
         '<div class="btns" style="justify-content:flex-start"><button class="btn pri" id="gBagla">' + esc(t("Google hesabını bağla")) + '</button></div>' +
         '<p class="small" style="margin:10px 0 0">' + esc(t("Eşitleme isteğe bağlıdır. Bağlamazsanız kayıtlarınız yalnızca bu cihazda kalır.")) + '</p>';
     }
     return h + '</div>';
+  }
+  function gAkisHTML(G) {
+    return '<ol class="gsteps"><li>' + esc(t("Bu telefonda ya da herhangi bir bilgisayarda şu adresi açın:")) + ' <a href="' + esc(G.adres) + '" target="_blank" rel="noopener"><b>' + esc(G.adres.replace(/^https?:\/\/(www\.)?/, "")) + '</b></a></li>' +
+      '<li>' + esc(t("Şu kodu yazın:")) + '<span class="gkod" id="gKod">' + esc(G.kod) + '</span><button type="button" class="btn sm" id="gKopya">' + esc(t("Kodu kopyala")) + '</button></li>' +
+      '<li>' + esc(t("Google hesabınızı seçin ve Kasa Jurnali’ye izin verin. Bu ekran kendiliğinden devam eder.")) + '</li></ol>' +
+      '<p class="small" id="gDurum"><span class="spin"></span>' + esc(G.mesaj || t("Onay bekleniyor…")) + '</p>' +
+      '<div class="btns" style="justify-content:flex-start"><button class="btn" id="gVazgec">' + esc(t("Vazgeç")) + '</button></div>';
   }
   function updSenk() {
     const el = $("#senkBtn"), b = S.senk; if (!el) return;
@@ -823,7 +1044,7 @@
     $("#senkLbl").textContent = b.durum === "calisiyor" ? t("Eşitleniyor…") : b.durum === "hata" ? t("Eşitlenemedi") : b.durum === "cevrimdisi" ? t("Çevrimdışı") : t("Eşitlendi");
     el.title = senkDurumMetni(b) + (b.hesap ? " · " + b.hesap : "");
   }
-  function senkPanelYenile() { const p = $("#senkPanel"); if (p && S.tab === "io") p.outerHTML = senkPanel(); }
+  function senkPanelYenile() { if (kilitli() || document.body.classList.contains("girisli")) { if (!modalOpen()) render(); return; } const p = $("#senkPanel"); if (p && S.tab === "io") p.outerHTML = senkPanel(); }
   async function gBagla(btn) {
     if (btn) btn.disabled = true;
     try {
@@ -839,7 +1060,7 @@
     let r = null;
     try { r = await KJSenk.bekle(); G.mesaj = ""; } catch (e) { G.mesaj = e.message; }
     if (S.gbag !== G) return;                                  // cancelled meanwhile
-    if (r && r.durum === "tamam") return bitti(t("Google Drive bağlandı. Kayıtlar eşitleniyor…"));
+    if (r && r.durum === "tamam") { S.kurulumBekle = true; return bitti(t("Google Drive bağlandı. Kayıtlar eşitleniyor…")); }
     if (r && r.durum === "reddedildi") return bitti(t("İzin verilmedi; eşitleme açılmadı."));
     if (r && r.durum === "suresi-doldu") return bitti(t("Kodun süresi doldu. Yeniden deneyin."));
     if (r && r.yavasla) G.aralik += 5;
@@ -847,8 +1068,9 @@
     G.t = setTimeout(gBekle, G.aralik * 1000);
   }
   function openSenkOff() {
-    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh"><h3 id="sh">' + esc(t("Google Drive bağlantısı kesilsin mi?")) + '</h3><div class="info"><p>' + esc(t("Bu cihazdaki kayıtlar silinmez; bundan sonra yalnızca bu cihazda kalır. Diğer cihazlarınız ve Google Drive’daki kopya etkilenmez.")) + '</p><p class="small">' + esc(t("Drive’daki kopyayı tamamen silmek için: drive.google.com › Ayarlar › Uygulamaları yönet › Kasa Jurnali › Seçenekler › Gizli uygulama verilerini sil.")) + '</p></div>' +
-      '<div class="acts"><div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Vazgeç")) + '</button><button type="button" class="btn danger" id="senkOffOk">' + esc(t("Bağlantıyı kes")) + '</button></div></div></div></div>';
+    const zor = S.senk && S.senk.zorunlu;
+    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh"><h3 id="sh">' + esc(zor ? t("Oturum kapatılsın mı?") : t("Google Drive bağlantısı kesilsin mi?")) + '</h3><div class="info"><p>' + esc(zor ? t("Bu cihazdaki kayıtlar silinmez. Yeniden oturum açtığınızda kaldığınız yerden devam edersiniz. Diğer cihazlarınız ve Google Drive’daki kopya etkilenmez.") : t("Bu cihazdaki kayıtlar silinmez; bundan sonra yalnızca bu cihazda kalır. Diğer cihazlarınız ve Google Drive’daki kopya etkilenmez.")) + '</p><p class="small">' + esc(t("Drive’daki kopyayı tamamen silmek için: drive.google.com › Ayarlar › Uygulamaları yönet › Kasa Jurnali › Seçenekler › Gizli uygulama verilerini sil.")) + '</p></div>' +
+      '<div class="acts"><div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Vazgeç")) + '</button><button type="button" class="btn danger" id="senkOffOk">' + esc(zor ? t("Oturumu kapat") : t("Bağlantıyı kes")) + '</button></div></div></div></div>';
   }
   // the user is typing in a box on the page (a reload would wipe what was typed)
   const yazarken = () => { if (modalOpen()) return true; const a = document.activeElement; return !!(a && a.closest && a.closest("#main") && (a.tagName === "TEXTAREA" || (a.tagName === "INPUT" && !/^(radio|checkbox|file|button|submit)$/i.test(a.type)))); };
@@ -856,11 +1078,18 @@
     if (!window.KJSenk || S._senkKur) return;
     S._senkKur = true;
     KJSenk.kur({
-      ortam: WEB ? "web" : "pc", api, ham, fotoURL, cihaz: WEB ? "iPhone" : "PC",
-      onDurum: b => { const once = S.senk; S.senk = b; updSenk(); if (!once || once.bagli !== b.bagli || once.hazir !== b.hazir || once.durum !== b.durum || once.calisiyor !== b.calisiyor) senkPanelYenile(); },
+      ortam: WEB ? "web" : "pc", api, ham, fotoURL, cihaz: WEB ? "iPhone" : "PC", surum: SURUM,
+      onDurum: b => {
+        const once = S.senk; S.senk = b; updSenk();
+        if (!once || once.bagli !== b.bagli || once.hazir !== b.hazir || once.durum !== b.durum || once.calisiyor !== b.calisiyor || once.izinli !== b.izinli || once.lisansHata !== b.lisansHata || JSON.stringify(once.lisans) !== JSON.stringify(b.lisans)) senkPanelYenile();
+        if (S.kurulumBekle && b.bagli && b.izinli && !b.calisiyor && b.durum !== "calisiyor") {
+          S.kurulumBekle = false;
+          setTimeout(async () => { try { await reload(); } catch (e) { } if (!S.set.name && !modalOpen()) openTekne(); }, 300);
+        }
+      },
       onYerelDegisti: () => { if (yazarken()) S._pending = true; else reload().catch(() => { }); },
       onBilgi: o => { if (o.gelen || o.giden) toast(t("Eşitleme tamam: {gelen} kayıt geldi, {giden} kayıt gönderildi.", { gelen: o.gelen, giden: o.giden })); }
-    }).catch(() => { });
+    }).catch(() => { S.senk = { hazir: false, bagli: false }; render(); });
   }
 
   /* ---------------- updates ---------------- */
@@ -957,13 +1186,27 @@
     if (t0.closest("#acceptTerms")) { acceptTerms(t0.closest("#acceptTerms")); return; }
     if (t0.closest("#declineTerms")) { declineTerms(); return; }
     if (mustAccept()) return;
+    if (t0.closest("#menuBtn")) { openMenu(); return; }
+    const mo2 = t0.closest("[data-menu]"); if (mo2) { menuSec(mo2.dataset.menu); return; }
+    if (t0.closest("#erisimDene")) { const b = t0.closest("#erisimDene"); b.disabled = true; KJSenk.lisansDenetle().then(() => { render(); const k = S.senk && S.senk.izinli; if (k) KJSenk.esitle(); else toast(t("Erişim hâlâ kapalı.")); }); return; }
+    if (t0.closest("#erisimYedek")) { backupNow(); return; }
+    if (t0.closest("[data-yasal-ac]")) { e.preventDefault(); openTerms("view"); return; }
+    if (t0.closest("#erisimCikis")) { openSenkOff(); return; }
+    const yf = t0.closest("[data-yfiltre]"); if (yf) { S.yon.filtre = yf.dataset.yfiltre; render(); return; }
+    const yk = t0.closest("[data-ykisi]"); if (yk) { openYKisi(yk.dataset.ykisi); return; }
+    const ys = t0.closest("[data-ysure]"); if (ys) { ySure(ys.dataset.ysure); return; }
+    if (t0.closest("#yEkle")) { openYKisi(null); return; }
+    if (t0.closest("#yYenile")) { yonYukle(true); return; }
+    if (t0.closest("#ySil")) { ySil(t0.closest("#ySil")); return; }
+    if (t0.closest("#yAyarKaydet")) { yAyarKaydet(t0.closest("#yAyarKaydet")); return; }
+    const rp = t0.closest("[data-rapor]"); if (rp) { S.period = rp.dataset.ay; render(); openExport(); const r = document.querySelector('input[name="fmt"][value="' + rp.dataset.rapor + '"]'); if (r) r.checked = true; return; }
     if (t0.closest("#senkBtn")) { S.tab = "io"; render(); const p = $("#senkPanel"); if (p) p.scrollIntoView({ block: "start", behavior: "smooth" }); return; }
     if (t0.closest("#gBagla")) { gBagla(t0.closest("#gBagla")); return; }
     if (t0.closest("#gKopya")) { const k = S.gbag && S.gbag.kod; if (k && navigator.clipboard) navigator.clipboard.writeText(k).then(() => toast(t("Kod kopyalandı."))).catch(() => { }); return; }
     if (t0.closest("#gVazgec")) { if (S.gbag) clearTimeout(S.gbag.t); S.gbag = null; senkPanelYenile(); return; }
     if (t0.closest("#senkNow")) { KJSenk.esitle(); return; }
     if (t0.closest("#senkOff")) { openSenkOff(); return; }
-    if (t0.closest("#senkOffOk")) { const b = t0.closest("#senkOffOk"); b.disabled = true; KJSenk.cikis().then(() => { closeSheet(); render(); toast(t("Google Drive bağlantısı kesildi.")); }).catch(e => { b.disabled = false; toast(e.message); }); return; }
+    if (t0.closest("#senkOffOk")) { const b = t0.closest("#senkOffOk"); b.disabled = true; KJSenk.cikis().then(() => { closeSheet(); S.tab = "list"; render(); toast(S.senk && S.senk.zorunlu ? t("Oturum kapatıldı.") : t("Google Drive bağlantısı kesildi.")); }).catch(e => { b.disabled = false; toast(e.message); }); return; }
     if (t0.closest("#guncelAc") || t0.closest("#guncelKur")) { openGuncelle(); return; }
     if (t0.closest("#guncelSonra")) { S.guncelSonra = true; render(); return; }
     if (t0.closest("#guncelOk")) { guncelKur(t0.closest("#guncelOk")); return; }
@@ -972,6 +1215,7 @@
     const tab = t0.closest(".tabrow button"); if (tab) { S.tab = tab.dataset.tab; render(); window.scrollTo({ top: 0 }); return; }
     if (t0.closest("[data-addin]")) { openSheet(null, "in"); return; }
     if (t0.closest("[data-new]")) { openSheet(null); return; }
+    const km = t0.closest("[data-kimden]"); if (km) { const fv = $("#f_vendor"); if (fv) { fv.value = km.dataset.kimden; const fd = $("#f_desc"); if (fd && !fd.value) fd.focus(); } return; }
     const qk = t0.closest("[data-quick]"); if (qk) { const src = S.items.find(x => x.id === qk.dataset.quick); if (src) fillFrom(src); return; }
     const go = t0.closest("[data-go]"); if (go) { S.tab = go.dataset.go; render(); const f = go.dataset.focus; if (f) setTimeout(() => { const el = document.getElementById(f); if (el) { el.scrollIntoView({ block: "center" }); el.focus(); } }, 50); return; }
     const mo = t0.closest("[data-month]"); if (mo) { S.period = mo.dataset.month; render(); return; }
@@ -1007,7 +1251,7 @@
       return;
     }
   });
-  document.addEventListener("submit", e => { if (e.target.id === "form") { e.preventDefault(); saveForm(); } });
+  document.addEventListener("submit", e => { if (e.target.id === "form") { e.preventDefault(); saveForm(); } else if (e.target.id === "tekForm") { e.preventDefault(); tekneKaydet(); } else if (e.target.id === "yForm") { e.preventDefault(); yKaydet(); } });
   document.addEventListener("keydown", e => {
     const el = e.target;
     if (el && el.classList && el.classList.contains("num-in") && !e.ctrlKey && !e.metaKey && !e.altKey) {
@@ -1026,7 +1270,7 @@
     if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) { e.preventDefault(); manualSave(); return; }
     if (e.key === "Escape") { const v = $("#viewer"); if (v) { v.remove(); return; } if ($("#scrim")) closeSheet(); return; }
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test((el || {}).tagName || "");
-    if (typing || modalOpen() || e.ctrlKey || e.metaKey || e.altKey || S.mode !== "live") return;
+    if (typing || modalOpen() || e.ctrlKey || e.metaKey || e.altKey || S.mode !== "live" || kilitli()) return;
     if (e.key === "n" || e.key === "N") { e.preventDefault(); openSheet(null); }
     else if (e.key === "g" || e.key === "G" || e.key === "i" || e.key === "I" || e.key === "İ") { e.preventDefault(); openSheet(null, "in"); }
   });
@@ -1043,6 +1287,7 @@
   document.addEventListener("input", e => {
     const tg = e.target;
     if (tg.classList && tg.classList.contains("num-in")) fmtNumBox(tg);
+    if (tg.id === "yAra") { S.yon.ara = tg.value; clearTimeout(S._yt); S._yt = setTimeout(() => { render(); const q = $("#yAra"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }, 160); return; }
     if (tg.id === "q") { S.q = tg.value; S._focusQ = true; clearTimeout(S._qt); S._qt = setTimeout(render, 160); return; }
     if (tg.id === "f_cat") { S.catTouched = true; const lw = $("#ltWrap"); if (lw) lw.hidden = K.catKey(tg.value) !== "Yakıt" && !(toNum($("#f_lt").value) > 0); }
     if ((tg.id === "f_vendor" || tg.id === "f_desc") && !S.catTouched) { const c = K.guessCat($("#f_vendor").value, $("#f_desc").value); const fc = $("#f_cat"); if (fc) fc.value = K.catLabel(c); const lw = $("#ltWrap"); if (lw) { lw.hidden = c !== "Yakıt" && !(toNum($("#f_lt").value) > 0); if (c === "Yakıt" && !$("#f_lt").value) { const lt = K.parseLt($("#f_desc").value); if (lt > 0) { $("#f_lt").value = boxText(lt, 2); updLt(); } } } }
@@ -1054,7 +1299,7 @@
     if (tg.id === "acc1" || tg.id === "acc2") { if (S.terms) { S.terms[tg.id === "acc1" ? "c1" : "c2"] = tg.checked; const b = $("#acceptTerms"); if (b) b.disabled = !(S.terms.c1 && S.terms.c2); } return; }
     if (tg.name === "lang") { setLanguage(tg.value); return; }
     if (tg.id === "guncelDenetim") { const prev = S.set.guncelleme; S.set.guncelleme = tg.checked; persistSettings().then(() => { toast(tg.checked ? t("Yeni sürümler otomatik denetlenecek.") : t("Otomatik sürüm denetimi kapatıldı.")); if (tg.checked) guncelDenetle(false); }).catch(e => { S.set.guncelleme = prev; tg.checked = prev !== false; toast(e.message); }); return; }
-    if (tg.name === "ty") { const inn = tg.value === "in"; ["catWrap", "payWrap"].forEach(id => { const w = document.getElementById(id); if (w) w.hidden = inn; }); const lw = $("#ltWrap"); if (lw && inn) lw.hidden = true; const qb = $("#quickBox"); if (qb && !S.editing) qb.innerHTML = quickHTML(tg.value); $("#sh").textContent = sheetTitle(!!S.editing, inn, false); updFx(); return; }
+    if (tg.name === "ty") { const inn = tg.value === "in"; const cw = $("#catWrap"); if (cw) cw.hidden = inn; const pw = $("#payWrap"); if (pw) pw.innerHTML = payHTML(tg.value, ""); const fm = formMetin(tg.value), vl = $("#vendLbl"); if (vl) vl.textContent = fm.kim; const fv = $("#f_vendor"); if (fv) fv.placeholder = fm.kimOrn; const fd = $("#f_desc"); if (fd) fd.placeholder = fm.acOrn; const lw = $("#ltWrap"); if (lw && inn) lw.hidden = true; const qb = $("#quickBox"); if (qb && !S.editing) qb.innerHTML = quickHTML(tg.value); $("#sh").textContent = sheetTitle(!!S.editing, inn, false); updFx(); return; }
     if (tg.id === "f_cur") { const cur = tg.value; const r = (S.set.rates || {})[cur]; const fr = $("#f_rate"); if (fr && cur !== "TRY" && !fr.value && r) fr.value = K.dec(r); updFx(); updLt(); if (cur !== "TRY" && fr && !fr.value) fr.focus(); return; }
     if (tg.id === "periodSel") { S.period = tg.value; render(); return; }
     if (tg.id === "catSel") { S.cat = tg.value; render(); return; }

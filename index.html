@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="kj-token" content="">
-<meta name="kj-surum" content="2.0.1">
+<meta name="kj-surum" content="2.1.0">
 <meta name="kj-dil" content="">
 <meta name="kj-ortam" content="web">
 <link rel="manifest" href="manifest.webmanifest">
@@ -308,6 +308,51 @@ kbd{font-family:var(--f-mono);font-size:11px;border:1px solid var(--line);border
 .spin{display:inline-block;width:12px;height:12px;margin-right:8px;vertical-align:-1px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spinr .9s linear infinite}
 @keyframes spinr{to{transform:rotate(360deg)}}
 @media (max-width:520px){.senkb span{display:none}.senkb{padding:5px 7px}}
+/* menu */
+.menub{display:inline-grid;place-items:center;width:40px;height:40px;margin-right:4px;border-radius:10px;border:1px solid rgba(255,255,255,.22);background:transparent;color:var(--on-hull);cursor:pointer;flex:none}
+.menub svg{width:22px;height:22px}
+.scrim.cekmece{justify-content:flex-start;align-items:stretch;padding:0}
+.drawer{background:var(--surface);width:min(320px,86vw);height:100%;overflow:auto;padding:calc(14px + env(safe-area-inset-top)) 10px calc(14px + env(safe-area-inset-bottom));box-shadow:var(--shadow);display:flex;flex-direction:column;gap:2px}
+@media (prefers-reduced-motion:no-preference){.drawer{animation:sol .18s ease-out}@keyframes sol{from{transform:translateX(-24px);opacity:.6}to{transform:none;opacity:1}}}
+.dbas{display:flex;gap:12px;align-items:center;padding:6px 10px 14px;border-bottom:1px solid var(--line);margin-bottom:6px}
+.dbas img{width:42px;height:42px;border-radius:10px}
+.dbas b{display:block;font-size:16px}.dbas span{display:block;font-size:13px;color:var(--muted)}
+.ditem{display:flex;align-items:center;gap:12px;width:100%;border:0;background:transparent;color:var(--ink);font:500 15px var(--f-body);padding:11px 12px;border-radius:10px;text-align:left;cursor:pointer}
+.ditem svg{width:20px;height:20px;color:var(--accent);flex:none}
+.ditem:hover,.ditem.on{background:var(--sunk)}
+.ditem[data-menu="#cikis"]{color:var(--danger)}.ditem[data-menu="#cikis"] svg{color:var(--danger)}
+.dsurum{margin-top:auto;padding:12px;font-size:12px;color:var(--muted)}
+/* sign-in screen */
+body.girisli .tabs,body.girisli #fab,body.girisli .period,body.girisli .kasa,body.girisli .formula,body.girisli .menub,body.girisli #saveNow,body.girisli #saveState{display:none!important}
+.giris{max-width:460px;margin:24px auto;background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:28px 22px;text-align:center;box-shadow:var(--shadow)}
+.giris .glogo{width:72px;height:72px;border-radius:16px}
+.giris h2{margin:12px 0 8px}
+.giris .lead{text-align:left}
+.gbtn{display:inline-flex;align-items:center;gap:12px;background:#fff;color:#1f1f1f;border:1px solid #dadce0;border-radius:999px;padding:12px 22px;font:600 16px var(--f-body);margin:10px 0 14px;cursor:pointer}
+.gkutu{text-align:left;margin:8px 0}
+.giris .langsw{margin-top:10px;border-color:var(--line)}.giris .langsw button{color:var(--muted)}.giris .langsw button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+/* reports page */
+.rlist{display:flex;flex-direction:column;gap:8px}
+.rrow{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;justify-content:space-between;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.rbil b{display:block;font-size:15px}.rbil span{font-size:13px;color:var(--muted)}
+.giris .gdugme{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:14px 0 6px}
+.giris .note{text-align:left;margin:10px 0}
+.giris .small{text-align:left}
+/* control centre */
+.ysay{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:4px 0 14px}
+.ykutu{border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 6px;text-align:center;cursor:pointer;color:var(--ink);font:inherit}
+.ykutu b{display:block;font:600 22px var(--f-body);font-variant-numeric:tabular-nums}.ykutu span{font-size:12px;color:var(--muted)}
+.ykutu.on{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.ybar{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.ybar input{flex:1 1 200px;min-width:0}
+.ylist{display:flex;flex-direction:column;gap:8px}
+.yrow{display:flex;gap:10px;align-items:center;justify-content:space-between;width:100%;text-align:left;border:1px solid var(--line);background:var(--surface);border-radius:12px;padding:10px 12px;cursor:pointer;color:var(--ink);font:inherit}
+.yrow:hover{background:var(--sunk)}
+.ybil{min-width:0}.ybil b{display:block;font-size:15px;overflow-wrap:anywhere}.ybil span{display:block;font-size:13px;color:var(--muted)}.ybil .ynot{font-style:italic}
+.yrozet{flex:none;font-size:12px;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--sunk);color:var(--muted)}
+.yrozet.acik{background:var(--ok-soft);color:var(--ok)}.yrozet.dene{background:var(--warn-soft);color:var(--ink)}.yrozet.doldu,.yrozet.kapali{background:var(--danger-soft);color:var(--danger)}
+.yayar{display:flex;flex-direction:column;gap:6px}
+.ybitis{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.ybitis input{flex:1 1 160px}
+@media (max-width:520px){.ysay{grid-template-columns:repeat(3,minmax(0,1fr))}}
 /* iPhone app (html.web): room for the status bar and the home indicator, no zoom when a box is tapped */
 html.web .band{padding-top:env(safe-area-inset-top)}
 html.web .fabs{bottom:calc(14px + env(safe-area-inset-bottom))}
@@ -330,7 +375,7 @@ html.web body{-webkit-tap-highlight-color:transparent}
     <div class="flag"><span class="ics" title="K · A · S · A — uluslararası işaret sancakları" data-t-title="K · A · S · A — uluslararası işaret sancakları" aria-hidden="true"><i class="k"></i><i class="a"></i><i class="s"></i><i class="a"></i></span><span id="bookName">Günlük harcama ve kasa takibi</span>
       <span class="savewrap"><span class="langsw" role="group" aria-label="Dil / Language"><button type="button" data-lang="tr" aria-pressed="true">TR</button><button type="button" data-lang="en" aria-pressed="false">EN</button></span><button type="button" class="senkb" id="senkBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5z"/></svg><span id="senkLbl"></span></button><span class="savest" id="saveState">Açılıyor…</span><button class="savebtn busy" id="saveNow" title="Kaydet (Ctrl+S)" data-t-title="Kaydet (Ctrl+S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg><span id="saveLbl" data-t>Kaydet</span></button></span></div>
     <div class="headrow">
-      <div class="brand"><svg class="rose" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18.5" fill="none" stroke="currentColor" stroke-opacity=".45"/><circle cx="20" cy="20" r="14" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="1 2.2"/><path d="M20 2 L23 17 L38 20 L23 23 L20 38 L17 23 L2 20 L17 17 Z" fill="currentColor" fill-opacity=".35"/><path d="M20 2 L23 17 L20 20 L17 17 Z M38 20 L23 23 L20 20 L23 17 Z" fill="currentColor"/><path d="M20 38 L17 23 L20 20 L23 23 Z M2 20 L17 17 L20 20 L17 23 Z" fill="currentColor" fill-opacity=".6"/><circle cx="20" cy="20" r="2" fill="#0E2740"/></svg><h1>Kasa Jurnali</h1></div>
+      <div class="brand"><button type="button" class="menub" id="menuBtn" aria-label="Menü" title="Menü" data-t-aria="Menü" data-t-title="Menü"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><svg class="rose" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18.5" fill="none" stroke="currentColor" stroke-opacity=".45"/><circle cx="20" cy="20" r="14" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="1 2.2"/><path d="M20 2 L23 17 L38 20 L23 23 L20 38 L17 23 L2 20 L17 17 Z" fill="currentColor" fill-opacity=".35"/><path d="M20 2 L23 17 L20 20 L17 17 Z M38 20 L23 23 L20 20 L23 17 Z" fill="currentColor"/><path d="M20 38 L17 23 L20 20 L23 23 Z M2 20 L17 17 L20 20 L17 23 Z" fill="currentColor" fill-opacity=".6"/><circle cx="20" cy="20" r="2" fill="#0E2740"/></svg><h1>Kasa Jurnali</h1></div>
       <div class="period">
         <label for="periodSel" data-t>Dönem</label>
         <button class="navb" id="prevM" aria-label="Önceki ay" title="Önceki ay" data-t-aria="Önceki ay" data-t-title="Önceki ay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
@@ -349,7 +394,8 @@ html.web body{-webkit-tap-highlight-color:transparent}
   <div class="tabrow" role="tablist">
     <button role="tab" data-tab="list" aria-selected="true" data-t>Jurnal</button>
     <button role="tab" data-tab="sum" aria-selected="false" data-t>Özet</button>
-    <button role="tab" data-tab="io" aria-selected="false" data-t>Ayarlar ve yedek</button>
+    <button role="tab" data-tab="rapor" aria-selected="false" data-t>Raporlar</button>
+    <button role="tab" data-tab="io" aria-selected="false" data-t>Ayarlar</button>
   </div>
 </div></nav>
 <main class="wrap" id="main"><div class="loading">Jurnal açılıyor…</div></main>

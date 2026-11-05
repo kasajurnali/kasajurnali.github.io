@@ -1,11 +1,11 @@
 {
- "surum": "2.0.1",
- "tarih": "2026-11-03",
+ "surum": "2.1.0",
+ "tarih": "2026-11-05",
  "notlar": {
-  "tr": "Kasa Jurnali’nin yeni internet adresi: kasajurnali.github.io. Güncellemeler artık buradan gelir.",
-  "en": "Kasa Jurnali’s new web address: kasajurnali.github.io. Updates now come from here."
+  "tr": "Yeni menü, Raporlar sayfası ve Google ile oturum açma. Gelen parada donatan/armatör ve havale, EFT, nakit seçenekleri. Kullanım Koşulları ve Gizlilik Bildirimi güncellendi.",
+  "en": "New menu, Reports page and sign-in with Google. Income now records the owner and bank transfer, EFT or cash. Terms of Use and Privacy Notice updated."
  },
- "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.0.1.exe",
- "boyut": 18434560,
- "sha256": "4d88b92bd2bd1cd3fc2e7dbda69b12f3744254d445005ceb53145f13f0803543"
+ "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.1.0.exe",
+ "boyut": 18535424,
+ "sha256": "7e59f8853d179a85ea777eedc4291717c5aee86d8c122c909248eb09a3bbe7ee"
 }

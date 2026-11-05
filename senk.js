@@ -11,7 +11,9 @@
   const enc = encodeURIComponent;
   const O = {};                 // set by kur(): ortam, api, ham, fotoURL, cihaz, onDurum, onYerelDegisti, onBilgi
   const S = { hazir: false, bagli: false, hesap: "", durum: "kapali", hata: "", kod: "", son: null, calisiyor: false, tekrar: false,
-    sonYerelRev: null, sonUzakSurum: null, sonFoto: 0, zaman: null, ilk: true, dosyaId: null, sonListe: 0 };
+    sonYerelRev: null, sonUzakSurum: null, sonFoto: 0, zaman: null, ilk: true, dosyaId: null, sonListe: 0,
+    lisansAcik: false, lisans: null, lisansSon: 0, lisansHata: "" };
+  const GUN = 86400000, LISANS_ARALIK = 6 * 3600000, CEVRIMDISI_SURE = 14 * GUN;
 
   const hata = (mesaj, kod, status) => { const e = new Error(mesaj); e.kod = kod || ""; e.status = status || 0; return e; };
   const cevrimdisi = () => hata(K.t("İnternet bağlantısı yok"), "cevrimdisi");
@@ -32,6 +34,14 @@
     baslat: () => O.api("api/google/baslat", { method: "POST" }),
     bekle: () => O.api("api/google/bekle", { method: "POST" }),
     cikis: () => O.api("api/google/cikis", { method: "POST" }),
+    async yonetim(govde) {
+      let r;
+      try { r = await O.ham("api/google/yonetim", { method: "POST", body: JSON.stringify(govde), headers: { "Content-Type": "application/json" } }); }
+      catch (e) { throw hata(K.t("Program arka planda kapanmış."), "program"); }
+      const b = await r.json().catch(() => ({}));
+      if (!r.ok) throw hata(b.hata || K.t("İnternet bağlantısı yok"), b.kod || "", r.status);
+      return b;
+    },
     async istek(method, yol, govde, tur) {
       let r;
       try { r = await O.ham("api/google/" + yol, { method, body: govde, headers: tur ? { "Content-Type": tur } : {} }); }
@@ -55,7 +65,12 @@
       catch (e) { throw cevrimdisi(); }
       return { status: r.status, m: await r.json().catch(() => ({})) };
     },
-    async durum() { const k = await web.kayit(); const a = googleAyar(); return { hazir: !!(a.istemci && a.gizli), bagli: !!k.yenileme, hesap: k.hesap || "" }; },
+    async durum() {
+      const k = await web.kayit(), a = googleAyar();
+      let zorunlu = true;   // the app opens only after signing in (tests on this computer may turn it off)
+      try { if (/^(127\.0\.0\.1|localhost)$/.test(location.hostname) && localStorage.getItem("kj-giris-istege") === "1") zorunlu = false; } catch (e) { }
+      return { hazir: !!(a.istemci && a.gizli), bagli: !!k.yenileme, hesap: k.hesap || "", zorunlu, lisans: !!a.lisans };
+    },
     async baslat() {
       const a = googleAyar();
       if (!(a.istemci && a.gizli)) throw hata(K.t("Google Drive eşitlemesi bu sürümde ayarlanmamış"));
@@ -105,6 +120,34 @@
         if (r.status === 401 && deneme === 0) continue;
         return r;
       }
+    },
+    async yonetim(govde) {
+      const a = googleAyar();
+      if (!a.lisans) return { izin: true, kapali: true };
+      const giris = govde.islem === "giris";
+      const onbellek = async e => {
+        const k = await web.kayit().catch(() => ({}));
+        if (giris && k.lisans && k.lisans.izin != null) return Object.assign({}, k.lisans, { onbellek: true });
+        throw e;
+      };
+      let son;
+      for (let deneme = 0; deneme < 2; deneme++) {
+        const tok = await web.erisim(deneme > 0);
+        const g2 = Object.assign({}, govde, { erisim: tok }, giris ? { cihaz: "iphone", surum: O.surum || "" } : {});
+        let r;
+        try { r = await fetch(a.lisans, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(g2), redirect: "follow" }); }
+        catch (e) { return onbellek(cevrimdisi()); }
+        son = r.ok ? await r.json().catch(() => null) : null;
+        if (!son) return onbellek(hata(K.t("Erişim sunucusu yanıt vermedi."), "cevrimdisi"));
+        if (son.hata === "gecersiz" && deneme === 0) continue;
+        break;
+      }
+      if (giris && son.izin != null) {
+        son.zaman = Date.now();
+        const k = web._k || await web.kayit();
+        if (k.yenileme) { k.lisans = son; await web.kaydet(k).catch(() => { }); }
+      }
+      return son;
     },
     async cikis() {
       const k = web._k || await web.kayit();
@@ -172,6 +215,7 @@
   /* ---------------- one synchronisation ---------------- */
   function durumYaz(d) { S.durum = d; if (O.onDurum) O.onDurum(bilgi()); }
   async function esitle(sebep) {
+    if (!izinli()) return;
     if (!S.bagli) return;
     if (S.calisiyor) { S.tekrar = true; return; }
     S.calisiyor = true; clearTimeout(S.zaman); S.zaman = null;
@@ -238,7 +282,7 @@
 
   /* ---------------- connecting an account ---------------- */
   async function yenile() {
-    try { const d = await T().durum(); S.hazir = !!d.hazir; S.bagli = !!d.bagli; S.hesap = d.hesap || ""; if (!S.bagli && S.durum !== "kapali") S.durum = "kapali"; }
+    try { const d = await T().durum(); S.hazir = !!d.hazir; S.bagli = !!d.bagli; S.hesap = d.hesap || ""; S.zorunlu = d.zorunlu !== false; S.lisansAcik = !!d.lisans; if (!S.bagli && S.durum !== "kapali") S.durum = "kapali"; }
     catch (e) { S.hazir = false; }
     if (O.onDurum) O.onDurum(bilgi());
     return bilgi();
@@ -246,27 +290,64 @@
   async function baslat() { return T().baslat(); }
   async function bekle() {
     const r = await T().bekle();
-    if (r.durum === "tamam") { S.bagli = true; S.hesap = r.hesap || ""; S.ilk = true; S.sonUzakSurum = null; S.sonYerelRev = null; S.sonFoto = 0; esitle("ilk"); }
+    if (r.durum === "tamam") {
+      Object.assign(S, { bagli: true, hesap: r.hesap || "", ilk: true, sonUzakSurum: null, sonYerelRev: null, sonFoto: 0, lisans: null, lisansSon: 0 });
+      await lisansDenetle();
+      esitle("ilk");
+    }
     return r;
+  }
+
+  /* ---------------- access: may this Google account use Kasa Jurnali? (yonetim/Kod.gs) ---------------- */
+  const bugunISO = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+  // without internet the last answer is used for 14 days, and never past its end date
+  function izinli(L) {
+    if (!S.lisansAcik) return true;
+    L = L === undefined ? S.lisans : L;
+    if (!L) return false;
+    if (!L.izin) return false;
+    if (L.bitis && L.bitis < bugunISO()) return false;
+    if (L.onbellek && !(Date.now() - (+L.zaman || 0) < CEVRIMDISI_SURE)) return false;
+    return true;
+  }
+  async function lisansDenetle() {
+    if (!S.bagli || !S.lisansAcik) { S.lisans = S.lisansAcik ? null : { izin: true, kapali: true }; S.lisansHata = ""; if (O.onDurum) O.onDurum(bilgi()); return S.lisans; }
+    try {
+      const c = await T().yonetim({ islem: "giris" });
+      if (c.hata) throw hata(c.hata === "gecersiz" ? K.t("Google hesabı doğrulanamadı; yeniden oturum açın.") : K.t("Erişim sunucusu yanıt vermedi."), c.hata);
+      S.lisans = c; S.lisansHata = ""; S.lisansSon = c.onbellek ? 0 : Date.now();
+    } catch (e) {
+      if (e.kod === "bagli-degil" || e.kod === "baglanti-koptu") { S.bagli = false; S.durum = "kapali"; }
+      S.lisansHata = e.message; S.lisansSon = 0;
+    }
+    if (O.onDurum) O.onDurum(bilgi());
+    return S.lisans;
+  }
+  const lisansZamani = () => S.bagli && S.lisansAcik && Date.now() - S.lisansSon > (S.lisansSon ? LISANS_ARALIK : 110000);
+  async function yonetim(govde) {
+    const c = await T().yonetim(govde);
+    if (c.hata) throw hata({ yetki: K.t("Bu işlem için yetkiniz yok."), eposta: K.t("E-posta adresini kontrol edin."), tarih: K.t("Tarihi kontrol edin."), gecersiz: K.t("Google hesabı doğrulanamadı; yeniden oturum açın.") }[c.hata] || K.t("Erişim sunucusu yanıt vermedi."), c.hata);
+    return c;
   }
   async function cikis() {
     await T().cikis();
-    Object.assign(S, { bagli: false, hesap: "", durum: "kapali", hata: "", kod: "", son: null, sonUzakSurum: null, sonYerelRev: null, ilk: true, dosyaId: null, sonListe: 0 });
+    Object.assign(S, { bagli: false, hesap: "", durum: "kapali", hata: "", kod: "", son: null, sonUzakSurum: null, sonYerelRev: null, ilk: true, dosyaId: null, sonListe: 0, lisans: null, lisansSon: 0, lisansHata: "" });
     if (O.onDurum) O.onDurum(bilgi());
   }
-  const bilgi = () => ({ hazir: S.hazir, bagli: S.bagli, hesap: S.hesap, durum: S.durum, hata: S.hata, kod: S.kod, son: S.son, calisiyor: S.calisiyor });
+  const bilgi = () => ({ hazir: S.hazir, zorunlu: S.zorunlu, bagli: S.bagli, hesap: S.hesap, durum: S.durum, hata: S.hata, kod: S.kod, son: S.son, calisiyor: S.calisiyor,
+    lisansAcik: S.lisansAcik, lisans: S.lisans, lisansHata: S.lisansHata, izinli: izinli() });
 
   function kur(opts) {
     Object.assign(O, opts);
-    setInterval(() => { if (S.bagli && document.visibilityState !== "hidden") esitle("periyodik"); }, 120000);
+    setInterval(() => { if (!S.bagli || document.visibilityState === "hidden") return; if (lisansZamani()) lisansDenetle().then(() => esitle("periyodik")); else esitle("periyodik"); }, 120000);
     document.addEventListener("visibilitychange", () => {
       if (!S.bagli) return;
-      if (document.visibilityState === "visible") esitle("gorunur");
+      if (document.visibilityState === "visible") { if (lisansZamani()) lisansDenetle().then(() => esitle("gorunur")); else esitle("gorunur"); }
       else if (S.zaman) esitle("arka");   // the phone may stop the app soon: send waiting changes now
     });
     window.addEventListener("online", () => { if (S.bagli) esitle("cevrimici"); });
-    return yenile().then(b => { if (b.bagli) esitle("acilis"); return b; });
+    return yenile().then(async b => { if (b.bagli) { await lisansDenetle(); esitle("acilis"); } return bilgi(); });
   }
 
-  g.KJSenk = { kur, esitle: () => esitle("elle"), degisti: () => { if (S.bagli) planla(2500); }, baslat, bekle, cikis, bilgi, yenile };
+  g.KJSenk = { kur, esitle: () => esitle("elle"), degisti: () => { if (S.bagli && izinli()) planla(2500); }, baslat, bekle, cikis, bilgi, yenile, lisansDenetle, yonetim, izinli: () => izinli() };
 })(window);
