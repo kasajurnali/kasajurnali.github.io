@@ -1,13 +1,14 @@
 /* Kasa Jurnali — Google Drive synchronisation. The same engine runs in the computer program and on the iPhone.
    The book is kept as one file (kasa-verisi.json) and the receipt photos as foto-<id>.jpg in the program's own
-   hidden folder in the user's Google Drive ("appDataFolder": nothing else in Drive is visible to the program).
+   "Kasa Jurnali" folder in the user's Google Drive. The program asks only for "drive.file": it sees the files it
+   created itself and nothing else in Drive. (Google does not accept "drive.appdata" for this sign-in method.)
    Every device keeps its full copy; a synchronisation merges this device's copy with the one in Drive
    (KJ.birlestir: newest version of each entry and setting wins, deletions are remembered) and writes the
    result back to both. Nothing is lost when a device is offline: its changes travel the next time it syncs. */
 "use strict";
 (function (g) {
   const K = g.KJ;
-  const DOSYA = "kasa-verisi.json";
+  const DOSYA = "kasa-verisi.json", KLASOR = "Kasa Jurnali", KLASOR_TUR = "application/vnd.google-apps.folder";
   const enc = encodeURIComponent;
   const O = {};                 // set by kur(): ortam, api, ham, fotoURL, cihaz, onDurum, onYerelDegisti, onBilgi
   const S = { hazir: false, bagli: false, hesap: "", durum: "kapali", hata: "", kod: "", son: null, calisiyor: false, tekrar: false,
@@ -74,7 +75,7 @@
     async baslat() {
       const a = googleAyar();
       if (!(a.istemci && a.gizli)) throw hata(K.t("Google Drive eşitlemesi bu sürümde ayarlanmamış"));
-      const { status, m } = await web.form("/device/code", { client_id: a.istemci, scope: a.kapsam || "https://www.googleapis.com/auth/drive.appdata" });
+      const { status, m } = await web.form("/device/code", { client_id: a.istemci, scope: a.kapsam || "https://www.googleapis.com/auth/drive.file email" });
       if (status !== 200 || !m.device_code) throw hata("Google: " + (m.error_description || m.error || status));
       web.cihazKodu = m.device_code;
       return { kod: m.user_code, adres: m.verification_url || m.verification_uri, aralik: m.interval || 5, sure: m.expires_in };
@@ -169,7 +170,15 @@
     const s = "kj" + Math.random().toString(36).slice(2) + Date.now().toString(36);
     return { govde: new Blob(["--" + s + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(meta) + "\r\n--" + s + "\r\nContent-Type: " + tur + "\r\n\r\n", govde, "\r\n--" + s + "--"]), tur: "multipart/related; boundary=" + s };
   }
-  const defterDosyalari = async () => ((await gjson("GET", "drive/v3/files?spaces=appDataFolder&pageSize=20&orderBy=createdTime&q=" + enc("name='" + DOSYA + "' and trashed=false") + "&fields=" + enc("files(id,version,createdTime)"))).files || []);
+  // the "Kasa Jurnali" folder in Drive (the oldest one, if two devices happened to create one at the same time)
+  async function klasor() {
+    if (S.klasorId) return S.klasorId;
+    const l = (await gjson("GET", "drive/v3/files?spaces=drive&pageSize=10&orderBy=createdTime&q=" + enc("name='" + KLASOR + "' and mimeType='" + KLASOR_TUR + "' and trashed=false") + "&fields=" + enc("files(id,createdTime)"))).files || [];
+    if (l.length) return (S.klasorId = l[0].id);
+    const y = await (await istekOk("POST", "drive/v3/files?fields=id", JSON.stringify({ name: KLASOR, mimeType: KLASOR_TUR, description: "Kasa Jurnali kayıtları ve fiş fotoğrafları. Silmeyin ya da adını değiştirmeyin." }), "application/json")).json();
+    return (S.klasorId = y.id);
+  }
+  const defterDosyalari = async () => { const k = await klasor(); return (await gjson("GET", "drive/v3/files?spaces=drive&pageSize=20&orderBy=createdTime&q=" + enc("name='" + DOSYA + "' and '" + k + "' in parents and trashed=false") + "&fields=" + enc("files(id,version,createdTime)"))).files || []; };
   async function defterOku(id) {
     const r = await istekOk("GET", "drive/v3/files/" + id + "?alt=media");
     const d = JSON.parse(await r.text());
@@ -179,18 +188,19 @@
   async function defterYaz(id, veri) {
     const govde = JSON.stringify(veri);
     if (id) return (await istekOk("PATCH", "upload/drive/v3/files/" + id + "?uploadType=media&fields=id,version", govde, "application/json")).json();
-    const mp = cokParca({ name: DOSYA, parents: ["appDataFolder"], mimeType: "application/json" }, govde, "application/json");
+    const mp = cokParca({ name: DOSYA, parents: [await klasor()], mimeType: "application/json" }, govde, "application/json");
     return (await istekOk("POST", "upload/drive/v3/files?uploadType=multipart&fields=id,version", mp.govde, mp.tur)).json();
   }
 
   /* ---------------- photos: each one travels once, in whichever direction it is missing ---------------- */
   async function fotolar(D) {
+    const k = await klasor();
     const gerekli = new Set((D.kayitlar || []).map(e => e.photo).filter(x => typeof x === "string" && /^[a-f0-9]{24,40}$/.test(x)));
     const yerel = new Set((((await O.api("api/fotolar")) || {}).ids) || []);
     const uzak = new Map();
     let sayfa = "";
     do {
-      const r = await gjson("GET", "drive/v3/files?spaces=appDataFolder&pageSize=1000&q=" + enc("trashed=false") + "&fields=" + enc("nextPageToken,files(id,name,createdTime)") + (sayfa ? "&pageToken=" + enc(sayfa) : ""));
+      const r = await gjson("GET", "drive/v3/files?spaces=drive&pageSize=1000&q=" + enc("'" + k + "' in parents and trashed=false") + "&fields=" + enc("nextPageToken,files(id,name,createdTime)") + (sayfa ? "&pageToken=" + enc(sayfa) : ""));
       for (const f of r.files || []) { const m = /^foto-([a-f0-9]{24,40})\.jpg$/.exec(f.name || ""); if (m) uzak.set(m[1], f); }
       sayfa = r.nextPageToken || "";
     } while (sayfa);
@@ -198,7 +208,7 @@
     for (const id of gerekli) {
       if (yerel.has(id) && !uzak.has(id)) {
         const r = await O.ham(O.fotoURL(id)); if (!r.ok) continue;
-        const mp = cokParca({ name: "foto-" + id + ".jpg", parents: ["appDataFolder"] }, await r.blob(), "image/jpeg");
+        const mp = cokParca({ name: "foto-" + id + ".jpg", parents: [k] }, await r.blob(), "image/jpeg");
         await istekOk("POST", "upload/drive/v3/files?uploadType=multipart&fields=id", mp.govde, mp.tur); giden++;
       } else if (!yerel.has(id) && uzak.has(id)) {
         const b = await (await istekOk("GET", "drive/v3/files/" + uzak.get(id).id + "?alt=media")).blob();
@@ -233,7 +243,7 @@
           if (r.ok) { const f = await r.json(); if (!f.trashed) dosyalar = [f]; }
           else if (r.status !== 404) await istekOk("GET", "drive/v3/files/" + enc(S.dosyaId) + "?fields=id");   // reports the error
         }
-        if (!dosyalar) { dosyalar = await defterDosyalari(); S.sonListe = Date.now(); }
+        if (!dosyalar) { S.klasorId = null; dosyalar = await defterDosyalari(); S.sonListe = Date.now(); }
         const ana = dosyalar[0] || null;
         S.dosyaId = ana ? ana.id : null;
         if (ana && dosyalar.length === 1 && String(ana.version) === S.sonUzakSurum && yerel.rev === S.sonYerelRev && sebep !== "elle") break;   // nothing changed anywhere
@@ -331,7 +341,7 @@
   }
   async function cikis() {
     await T().cikis();
-    Object.assign(S, { bagli: false, hesap: "", durum: "kapali", hata: "", kod: "", son: null, sonUzakSurum: null, sonYerelRev: null, ilk: true, dosyaId: null, sonListe: 0, lisans: null, lisansSon: 0, lisansHata: "" });
+    Object.assign(S, { bagli: false, hesap: "", durum: "kapali", hata: "", kod: "", son: null, sonUzakSurum: null, sonYerelRev: null, ilk: true, dosyaId: null, klasorId: null, sonListe: 0, lisans: null, lisansSon: 0, lisansHata: "" });
     if (O.onDurum) O.onDurum(bilgi());
   }
   const bilgi = () => ({ hazir: S.hazir, zorunlu: S.zorunlu, bagli: S.bagli, hesap: S.hesap, durum: S.durum, hata: S.hata, kod: S.kod, son: S.son, calisiyor: S.calisiyor,

@@ -354,7 +354,6 @@
     "Bağlı": "Connected",
     "Google Drive eşitleme": "Google Drive sync",
     "Bu sürümde Google Drive eşitlemesi henüz etkin değil.": "Google Drive sync is not yet enabled in this version.",
-    "Kayıtlarınız ve fiş fotoğrafları, Google Drive’ınızdaki gizli uygulama klasörü üzerinden diğer cihazlarınızla kendiliğinden eşitlenir. İnternet yokken yapılan değişiklikler, bağlantı gelince gönderilir.": "Your records and receipt photos are synced automatically with your other devices through a hidden app folder in your Google Drive. Changes made without internet are sent when the connection returns.",
     "Bağlı hesap": "Connected account",
     "Google hesabı": "Google account",
     "Şimdi eşitle": "Sync now",
@@ -364,7 +363,6 @@
     "Kodu kopyala": "Copy code",
     "Google hesabınızı seçin ve Kasa Jurnali’ye izin verin. Bu ekran kendiliğinden devam eder.": "Choose your Google account and allow Kasa Jurnali. This screen continues by itself.",
     "Onay bekleniyor…": "Waiting for approval…",
-    "Telefonda ve bilgisayarda aynı defteri kullanmak için Google hesabınızı bağlayın. Kayıtlar Google Drive’ınızda yalnızca Kasa Jurnali’nin görebildiği gizli bir klasörde tutulur; Drive’daki diğer dosyalarınıza erişilmez.": "To use the same book on your phone and computer, connect your Google account. The records are kept in a hidden folder in your Google Drive that only Kasa Jurnali can see; your other Drive files are not accessed.",
     "Google hesabını bağla": "Connect Google account",
     "Eşitleme isteğe bağlıdır. Bağlamazsanız kayıtlarınız yalnızca bu cihazda kalır.": "Sync is optional. If you don't connect, your records stay only on this device.",
     "Çevrimdışı": "Offline",
@@ -374,7 +372,6 @@
     "İzin verilmedi; eşitleme açılmadı.": "Permission was not given; sync was not turned on.",
     "Google Drive bağlantısı kesilsin mi?": "Disconnect Google Drive?",
     "Bu cihazdaki kayıtlar silinmez; bundan sonra yalnızca bu cihazda kalır. Diğer cihazlarınız ve Google Drive’daki kopya etkilenmez.": "The records on this device are not deleted; from now on they stay only on this device. Your other devices and the copy in Google Drive are not affected.",
-    "Drive’daki kopyayı tamamen silmek için: drive.google.com › Ayarlar › Uygulamaları yönet › Kasa Jurnali › Seçenekler › Gizli uygulama verilerini sil.": "To delete the copy in Drive completely: drive.google.com › Settings › Manage apps › Kasa Jurnali › Options › Delete hidden app data.",
     "Eşitleme tamam: {gelen} kayıt geldi, {giden} kayıt gönderildi.": "Sync complete: {gelen} records received, {giden} sent.",
     "Yeni sürüm var: {surum}": "New version available: {surum}",
     "Kasa Jurnali güncel ({surum}).": "Kasa Jurnali is up to date ({surum}).",
@@ -424,7 +421,6 @@
     "Örn. Su ve yoğurt": "E.g. Water and yoghurt",
     "Örn. 37,85": "E.g. 37.85",
     "Örn. 900": "E.g. 900",
-    "Başlamak için Google hesabınızla oturum açın. Kayıtlarınız Google Drive’ınızda yalnızca Kasa Jurnali’nin görebildiği gizli bir klasörde saklanır; telefonda ve bilgisayarda aynı defteri kullanırsınız.": "To start, sign in with your Google account. Your records are kept in a hidden folder in your Google Drive that only Kasa Jurnali can see; you use the same book on your phone and computer.",
     "Google ile oturum aç": "Sign in with Google",
     "İlk girişte internet gerekir; sonra internet olmadan da çalışır. Google parolanız Kasa Jurnali’ye girilmez.": "The first sign-in needs internet; afterwards it also works offline. Your Google password is never entered into Kasa Jurnali.",
     "Tekne bilgileri": "Boat details",
@@ -517,7 +513,11 @@
     "Erişim sunucusu yanıt vermedi.": "The access server did not respond.",
     "Google hesabı doğrulanamadı; yeniden oturum açın.": "The Google account could not be verified; sign in again.",
     "Bu işlem için yetkiniz yok.": "You are not allowed to do this.",
-    "Tarihi kontrol edin.": "Check the date."
+    "Tarihi kontrol edin.": "Check the date.",
+    "Başlamak için Google hesabınızla oturum açın. Kayıtlarınız Google Drive’ınızdaki “Kasa Jurnali” klasöründe saklanır; telefonda ve bilgisayarda aynı defteri kullanırsınız. Kasa Jurnali Drive’daki diğer dosyalarınızı göremez.": "To start, sign in with your Google account. Your records are kept in a “Kasa Jurnali” folder in your Google Drive; you use the same book on your phone and computer. Kasa Jurnali cannot see your other Drive files.",
+    "Kayıtlarınız ve fiş fotoğrafları, Google Drive’ınızdaki “Kasa Jurnali” klasörü üzerinden diğer cihazlarınızla kendiliğinden eşitlenir. İnternet yokken yapılan değişiklikler, bağlantı gelince gönderilir. Bu klasörü silmeyin ve adını değiştirmeyin.": "Your records and receipt photos are synchronised with your other devices automatically through the “Kasa Jurnali” folder in your Google Drive. Changes made offline are sent when the connection returns. Do not delete or rename this folder.",
+    "Telefonda ve bilgisayarda aynı defteri kullanmak için Google hesabınızı bağlayın. Kayıtlar Google Drive’ınızdaki “Kasa Jurnali” klasöründe tutulur; Drive’daki diğer dosyalarınıza erişilmez.": "Connect your Google account to use the same book on your phone and computer. The records are kept in a “Kasa Jurnali” folder in your Google Drive; your other Drive files are not accessed.",
+    "Drive’daki kopyayı tamamen silmek için oturumu kapattıktan sonra Google Drive’daki “Kasa Jurnali” klasörünü silin.": "To delete the copy in Drive completely, sign out and then delete the “Kasa Jurnali” folder in Google Drive."
   };
   g.KJ_SOZLUK = { en };
 })(window);

@@ -837,7 +837,7 @@
   const GOOGLE_G = '<svg viewBox="0 0 48 48" width="20" height="20" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
   function girisHTML() {
     return '<div class="giris"><img class="glogo" src="ikon.png" alt=""><h2>' + esc(t("Kasa Jurnali’ye hoş geldiniz")) + '</h2>' +
-      '<p class="lead">' + esc(t("Başlamak için Google hesabınızla oturum açın. Kayıtlarınız Google Drive’ınızda yalnızca Kasa Jurnali’nin görebildiği gizli bir klasörde saklanır; telefonda ve bilgisayarda aynı defteri kullanırsınız.")) + '</p>' +
+      '<p class="lead">' + esc(t("Başlamak için Google hesabınızla oturum açın. Kayıtlarınız Google Drive’ınızdaki “Kasa Jurnali” klasöründe saklanır; telefonda ve bilgisayarda aynı defteri kullanırsınız. Kasa Jurnali Drive’daki diğer dosyalarınızı göremez.")) + '</p>' +
       (S.gbag ? '<div class="gkutu">' + gAkisHTML(S.gbag) + '</div>' : '<button type="button" class="btn gbtn" id="gBagla">' + GOOGLE_G + '<span>' + esc(t("Google ile oturum aç")) + '</span></button>') +
       '<p class="small">' + esc(t("İlk girişte internet gerekir; sonra internet olmadan da çalışır. Google parolanız Kasa Jurnali’ye girilmez.")) + '</p>' +
       (S.senk && S.senk.lisansAcik ? '<p class="small">' + esc(t("Oturum açtığınızda Google hesabınızın e-posta adresi, giriş tarihleri, cihaz türü ve uygulama sürümü yalnızca erişim yönetimi (deneme süresi, kullanım hakkı) için Kasa Jurnali’ye kaydedilir. Kayıtlarınız Kasa Jurnali’ye gönderilmez. Ayrıntılar Gizlilik Bildirimi’nde.")) + ' <a href="#" data-yasal-ac>' + esc(t("Gizlilik Bildirimi")) + '</a></p>' : "") + langSwitchHTML() + '</div>';
@@ -1016,14 +1016,14 @@
     let h = '<div class="panel" id="senkPanel"><h3>' + esc(t("Google Drive eşitleme")) + '</h3>';
     if (!b.hazir) return h + '<p class="lead" style="margin:0">' + esc(t("Bu sürümde Google Drive eşitlemesi henüz etkin değil.")) + '</p></div>';
     if (b.bagli) {
-      h += '<p class="lead">' + esc(t("Kayıtlarınız ve fiş fotoğrafları, Google Drive’ınızdaki gizli uygulama klasörü üzerinden diğer cihazlarınızla kendiliğinden eşitlenir. İnternet yokken yapılan değişiklikler, bağlantı gelince gönderilir.")) + '</p>' +
+      h += '<p class="lead">' + esc(t("Kayıtlarınız ve fiş fotoğrafları, Google Drive’ınızdaki “Kasa Jurnali” klasörü üzerinden diğer cihazlarınızla kendiliğinden eşitlenir. İnternet yokken yapılan değişiklikler, bağlantı gelince gönderilir. Bu klasörü silmeyin ve adını değiştirmeyin.")) + '</p>' +
         '<div class="kv senkkv"><span>' + esc(t("Bağlı hesap")) + '</span><b>' + esc(b.hesap || t("Google hesabı")) + '</b><span>' + esc(t("Durum")) + '</span><b>' + esc(senkDurumMetni(b)) + '</b>' + (erisimSatiri() ? '<span>' + esc(t("Kullanım")) + '</span><b>' + esc(erisimSatiri()) + '</b>' : "") + '</div>' +
         (b.durum === "hata" && b.hata ? '<p class="err-t" style="margin:8px 0 0">' + esc(b.hata) + '</p>' : "") +
         '<div class="btns" style="justify-content:flex-start;margin-top:12px"><button class="btn pri" id="senkNow"' + (b.calisiyor ? " disabled" : "") + '>' + esc(t("Şimdi eşitle")) + '</button><button class="btn" id="senkOff">' + esc(b.zorunlu ? t("Oturumu kapat") : t("Bağlantıyı kes")) + '</button></div>';
     } else if (S.gbag) {
       h += gAkisHTML(S.gbag);
     } else {
-      h += '<p class="lead">' + esc(t("Telefonda ve bilgisayarda aynı defteri kullanmak için Google hesabınızı bağlayın. Kayıtlar Google Drive’ınızda yalnızca Kasa Jurnali’nin görebildiği gizli bir klasörde tutulur; Drive’daki diğer dosyalarınıza erişilmez.")) + '</p>' +
+      h += '<p class="lead">' + esc(t("Telefonda ve bilgisayarda aynı defteri kullanmak için Google hesabınızı bağlayın. Kayıtlar Google Drive’ınızdaki “Kasa Jurnali” klasöründe tutulur; Drive’daki diğer dosyalarınıza erişilmez.")) + '</p>' +
         '<div class="btns" style="justify-content:flex-start"><button class="btn pri" id="gBagla">' + esc(t("Google hesabını bağla")) + '</button></div>' +
         '<p class="small" style="margin:10px 0 0">' + esc(t("Eşitleme isteğe bağlıdır. Bağlamazsanız kayıtlarınız yalnızca bu cihazda kalır.")) + '</p>';
     }
@@ -1069,7 +1069,7 @@
   }
   function openSenkOff() {
     const zor = S.senk && S.senk.zorunlu;
-    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh"><h3 id="sh">' + esc(zor ? t("Oturum kapatılsın mı?") : t("Google Drive bağlantısı kesilsin mi?")) + '</h3><div class="info"><p>' + esc(zor ? t("Bu cihazdaki kayıtlar silinmez. Yeniden oturum açtığınızda kaldığınız yerden devam edersiniz. Diğer cihazlarınız ve Google Drive’daki kopya etkilenmez.") : t("Bu cihazdaki kayıtlar silinmez; bundan sonra yalnızca bu cihazda kalır. Diğer cihazlarınız ve Google Drive’daki kopya etkilenmez.")) + '</p><p class="small">' + esc(t("Drive’daki kopyayı tamamen silmek için: drive.google.com › Ayarlar › Uygulamaları yönet › Kasa Jurnali › Seçenekler › Gizli uygulama verilerini sil.")) + '</p></div>' +
+    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh"><h3 id="sh">' + esc(zor ? t("Oturum kapatılsın mı?") : t("Google Drive bağlantısı kesilsin mi?")) + '</h3><div class="info"><p>' + esc(zor ? t("Bu cihazdaki kayıtlar silinmez. Yeniden oturum açtığınızda kaldığınız yerden devam edersiniz. Diğer cihazlarınız ve Google Drive’daki kopya etkilenmez.") : t("Bu cihazdaki kayıtlar silinmez; bundan sonra yalnızca bu cihazda kalır. Diğer cihazlarınız ve Google Drive’daki kopya etkilenmez.")) + '</p><p class="small">' + esc(t("Drive’daki kopyayı tamamen silmek için oturumu kapattıktan sonra Google Drive’daki “Kasa Jurnali” klasörünü silin.")) + '</p></div>' +
       '<div class="acts"><div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Vazgeç")) + '</button><button type="button" class="btn danger" id="senkOffOk">' + esc(zor ? t("Oturumu kapat") : t("Bağlantıyı kes")) + '</button></div></div></div></div>';
   }
   // the user is typing in a box on the page (a reload would wipe what was typed)

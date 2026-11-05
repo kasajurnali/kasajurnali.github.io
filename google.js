@@ -5,6 +5,6 @@
 window.KJ_GOOGLE = {
   istemci: "105192108390-b5nvfj5pfhaqcvb6arv80a77eg4bmenv.apps.googleusercontent.com",
   gizli: "R09DU1BYLTdlbUN0QXF5SDEyWHJCeDdKUmdPeG1rSU5rNUw=",
-  kapsam: "https://www.googleapis.com/auth/drive.appdata email",
+  kapsam: "https://www.googleapis.com/auth/drive.file email",
   lisans: "https://script.google.com/macros/s/AKfycbyu_Cg39xjn6gd743RT-A9Sip3R0Jd2s5UfaaXyrUFhnTlnLDLpIkKyIzgE0p7QtwAA/exec"
 };

@@ -1,11 +1,11 @@
 {
- "surum": "2.1.0",
+ "surum": "2.1.1",
  "tarih": "2026-11-05",
  "notlar": {
-  "tr": "Yeni menü, Raporlar sayfası ve Google ile oturum açma. Gelen parada donatan/armatör ve havale, EFT, nakit seçenekleri. Kullanım Koşulları ve Gizlilik Bildirimi güncellendi.",
-  "en": "New menu, Reports page and sign-in with Google. Income now records the owner and bank transfer, EFT or cash. Terms of Use and Privacy Notice updated."
+  "tr": "Google ile oturum açma düzeltildi. Kayıtlar artık Google Drive’ınızdaki “Kasa Jurnali” klasöründe. Yeni menü, Raporlar sayfası, gelen parada donatan/armatör ve havale, EFT, nakit.",
+  "en": "Sign-in with Google fixed. Records are now kept in a “Kasa Jurnali” folder in your Google Drive. New menu, Reports page, owner and bank transfer, EFT or cash for income."
  },
- "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.1.0.exe",
- "boyut": 18535424,
- "sha256": "7e59f8853d179a85ea777eedc4291717c5aee86d8c122c909248eb09a3bbe7ee"
+ "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.1.1.exe",
+ "boyut": 18539008,
+ "sha256": "9b63c506a4f06d3b1b4e21a29b9da3ac8b421e1b257a44637bd4b1790ed84d90"
 }
