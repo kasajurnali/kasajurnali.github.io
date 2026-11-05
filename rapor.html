@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="{{DIL}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=840">
+<title>Kasa Raporu</title>
+<style>
+@page {
+  size: A4;
+  margin: 13mm 12mm 15mm 12mm;
+  @bottom-left { content: "{{ALT}}"; font: 7pt "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif; color: #7A8995; }
+  @bottom-right { content: {{SAYFA}}; font: 7pt "Segoe UI", "Noto Sans", "DejaVu Sans", sans-serif; color: #7A8995; }
+}
+:root { --ink:#0F2131; --muted:#5E6E7C; --line:#D5DDE4; --navy:#0E2740; --navy2:#17436F; --brass:#B8862E; --brass-d:#8C5E13; --brass-soft:#F6ECD8; --green:#1E7349; --red:#B42318; --sunk:#EFF3F6; --zebra:#F8FAFB; }
+* { box-sizing: border-box; }
+html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { margin: 0; font-family: "Segoe UI", "Noto Sans", "DejaVu Sans", Arial, sans-serif; font-size: 8.6pt; color: var(--ink); line-height: 1.38; }
+.mono, td.n, .kutu .v, .tutar { font-family: "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace; font-variant-numeric: tabular-nums; }
+.bolum { break-before: page; }
+.bolum.ilk { break-before: auto; }
+
+/* letterhead */
+.rh { display: grid; grid-template-columns: 1fr auto; gap: 8mm; align-items: end; padding: 0 0 4mm; border-bottom: 2.2pt solid var(--navy); position: relative; }
+.rh::after { content: ""; position: absolute; left: 0; right: 0; bottom: -4.2pt; border-bottom: .6pt solid var(--navy); }
+.ust { display: flex; align-items: center; gap: 2.4mm; font-size: 6.8pt; letter-spacing: .16em; text-transform: uppercase; color: var(--brass-d); font-weight: 700; margin-bottom: 2.2mm; }
+.ics { display: inline-flex; gap: .7mm; }
+.ics i { width: 4.2mm; height: 3mm; display: block; outline: .25pt solid #C9D3DC; }
+.ics .k { background: linear-gradient(90deg, #F2C230 50%, #1E4FA0 50%); }
+.ics .a { background: linear-gradient(90deg, #fff 50%, #1E4FA0 50%); clip-path: polygon(0 0, 100% 0, 72% 50%, 100% 100%, 0 100%); outline: none; }
+.ics .s { background: #fff; position: relative; }
+.ics .s::after { content: ""; position: absolute; inset: .75mm 1.25mm; background: #1E4FA0; }
+.kurum { font-size: 17pt; font-weight: 700; color: var(--navy); line-height: 1.1; }
+h1 { font-size: 10.5pt; font-weight: 600; margin: 1.2mm 0 0; color: var(--muted); letter-spacing: .02em; }
+.rh-r { text-align: right; }
+.etk { font-size: 6.4pt; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.donem { font-size: 15pt; font-weight: 700; color: var(--navy); line-height: 1.15; }
+.meta { font-size: 7.4pt; color: var(--muted); margin-top: 1mm; }
+.durum { display: inline-block; margin-top: 1.6mm; font-size: 6.6pt; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; padding: .7mm 2.4mm; border-radius: 1mm; }
+.durum.kapali { color: var(--brass-d); border: .7pt solid var(--brass); background: var(--brass-soft); }
+.durum.acik { color: var(--navy2); border: .7pt solid #9DB4CC; }
+
+/* summary */
+.ozet { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.6mm; margin: 6mm 0 2mm; }
+.kutu { border: .6pt solid var(--line); border-radius: 1.6mm; padding: 2.6mm 3mm 2.8mm; background: var(--zebra); }
+.kutu .l { font-size: 6.3pt; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.kutu .v { font-size: 11.6pt; font-weight: 700; margin-top: .8mm; white-space: nowrap; }
+.kutu .s { font-size: 6.8pt; color: var(--muted); margin-top: .6mm; }
+.kutu.gelen .v { color: var(--green); }
+.kutu.kalan { background: var(--navy); border-color: var(--navy); color: #fff; }
+.kutu.kalan .l, .kutu.kalan .s { color: #C9D6E3; }
+.kutu.kalan .v { color: #F2C66B; }
+.kutu.kalan.acik { background: #FBE4E1; border-color: var(--red); }
+.kutu.kalan.acik .l, .kutu.kalan.acik .s { color: var(--red); }
+.kutu.kalan.acik .v { color: var(--red); }
+.formul { font-size: 7pt; color: var(--muted); margin: 0 0 4mm; }
+
+/* ledger */
+table.defter { width: 100%; border-collapse: collapse; table-layout: fixed; }
+table.defter thead { display: table-header-group; }
+table.defter th { background: var(--navy); color: #fff; font-size: 6.6pt; letter-spacing: .1em; text-transform: uppercase; font-weight: 700; padding: 2mm 1.6mm; text-align: left; }
+table.defter th.n { text-align: right; }
+table.defter td { padding: 1.55mm 1.6mm; border-bottom: .5pt solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+table.defter tbody tr { break-inside: avoid; }
+table.defter tbody tr:nth-child(even) td { background: var(--zebra); }
+td.n { text-align: right; white-space: nowrap; }
+td.g { color: var(--green); }
+td.k { color: var(--muted); font-size: 7.9pt; }
+td.tarih { white-space: nowrap; font-size: 7.9pt; }
+.panel h3 { text-transform: uppercase; }
+td.eksi { color: var(--red); font-weight: 600; }
+td .alt { display: block; font-size: 7pt; color: var(--muted); margin-top: .3mm; }
+.ek { display: inline-block; font-size: 6.2pt; font-weight: 700; color: var(--brass-d); border: .5pt solid var(--brass); border-radius: .8mm; padding: 0 1mm; margin-left: 1mm; letter-spacing: .04em; }
+tr.devir td { background: var(--sunk) !important; color: var(--muted); font-style: italic; }
+tr.devir td.n { font-style: normal; color: var(--ink); font-weight: 600; }
+tr.toplam td { background: var(--sunk) !important; border-top: 1.2pt solid var(--navy); border-bottom: .5pt solid var(--line); font-weight: 700; }
+tr.kalan td { background: var(--brass-soft) !important; font-weight: 700; font-size: 9pt; border-bottom: 1.2pt solid var(--navy); }
+tr.kalan td.n { color: var(--navy); }
+tr.kalan.acik td { background: #FBE4E1 !important; }
+tr.kalan.acik td.n { color: var(--red); }
+.bos { text-align: center; color: var(--muted); padding: 6mm 0 !important; font-style: italic; }
+
+/* lower panels */
+.alt-grid { display: grid; grid-template-columns: 1.15fr 1fr; gap: 5mm; margin-top: 6mm; break-inside: avoid; }
+.panel h3 { font-size: 7.2pt; letter-spacing: .14em; text-transform: uppercase; color: var(--navy); margin: 0 0 2mm; padding-bottom: 1.2mm; border-bottom: .8pt solid var(--navy); }
+.panel + .panel { margin-top: 4mm; }
+table.ozt { width: 100%; border-collapse: collapse; }
+table.ozt td { padding: 1.1mm 0; border-bottom: .4pt solid var(--line); vertical-align: middle; }
+table.ozt td.n { padding-left: 2mm; }
+table.ozt td.y { width: 11mm; color: var(--muted); font-size: 7.4pt; }
+.cubuk { height: 1.6mm; background: var(--sunk); border-radius: .8mm; overflow: hidden; margin-top: .6mm; }
+.cubuk i { display: block; height: 100%; background: var(--navy2); border-radius: .8mm; }
+.cubuk.p i { background: var(--brass); }
+.kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2mm; margin-bottom: 2mm; }
+.kv div { background: var(--zebra); border: .5pt solid var(--line); border-radius: 1.2mm; padding: 1.6mm 2mm; }
+.kv span { display: block; font-size: 6pt; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.kv b { font-family: "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace; font-size: 8.6pt; }
+
+/* signatures */
+.imza { display: grid; grid-template-columns: 1fr 1fr; gap: 12mm; margin-top: 9mm; break-inside: avoid; }
+.imza .k { border-top: .8pt solid var(--ink); padding-top: 1.6mm; }
+.imza .r { font-size: 6.4pt; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.imza .ad { font-size: 9.4pt; font-weight: 600; margin-top: .8mm; min-height: 4.5mm; }
+.imza .tr { font-size: 7.2pt; color: var(--muted); margin-top: .6mm; }
+.imza .bosluk { height: 14mm; }
+.damga { margin-top: 5mm; border: .9pt dashed var(--brass); background: var(--brass-soft); border-radius: 1.6mm; padding: 2.4mm 3.2mm; display: flex; justify-content: space-between; gap: 4mm; align-items: center; break-inside: avoid; }
+.damga b { color: var(--brass-d); letter-spacing: .14em; text-transform: uppercase; font-size: 8pt; }
+.damga span { font-size: 8pt; }
+
+/* cover for multi-month reports */
+table.kapak { width: 100%; border-collapse: collapse; margin-top: 6mm; }
+table.kapak th { background: var(--navy); color: #fff; font-size: 6.6pt; letter-spacing: .1em; text-transform: uppercase; padding: 2mm 2mm; text-align: left; }
+table.kapak th.n { text-align: right; }
+table.kapak td { padding: 2mm; border-bottom: .5pt solid var(--line); }
+table.kapak tr.toplam td { border-top: 1.2pt solid var(--navy); background: var(--sunk); font-weight: 700; }
+
+/* photo appendix */
+.ekler h2 { font-size: 12pt; color: var(--navy); margin: 0 0 1mm; }
+.ekler .aciklama { font-size: 7.6pt; color: var(--muted); margin: 0 0 4mm; }
+figure { margin: 0 0 5mm; break-inside: avoid; border: .6pt solid var(--line); border-radius: 1.6mm; padding: 2.4mm; }
+figure figcaption { font-size: 8pt; margin-bottom: 2mm; display: flex; justify-content: space-between; gap: 4mm; }
+figure figcaption b { color: var(--navy); }
+figure img { display: block; max-width: 100%; max-height: 108mm; margin: 0 auto; object-fit: contain; }
+
+/* on-screen preview (only used when the PDF could not be made automatically) */
+@media screen {
+  body { background: #DDE3E8; padding: 18px 0 40px; }
+  #r { width: 210mm; margin: 0 auto; background: #fff; padding: 13mm 12mm; box-shadow: 0 6px 24px rgba(0,0,0,.18); }
+  .yazdir { position: fixed; top: 14px; right: 14px; background: #17436F; color: #fff; border: 0; border-radius: 999px; padding: 10px 18px; font: 600 14px "Segoe UI", sans-serif; cursor: pointer; }
+}
+@media print { .yazdir, .geri { display: none; } }
+/* iPhone: the report opens inside the app, with a way back */
+@media screen { .geri { position: fixed; top: 14px; left: 14px; background: #fff; color: #17436F; border: 1px solid #17436F; border-radius: 999px; padding: 9px 16px; font: 600 14px -apple-system, "Segoe UI", sans-serif; text-decoration: none; }
+  .yazdir, .geri { top: max(14px, env(safe-area-inset-top)); } }
+</style>
+</head>
+<body>
+<button class="yazdir" onclick="window.print()">{{YAZDIR}}</button>{{GERI}}
+<div id="r"></div>
+<script>window.__RAPOR = /*VERI*/null;</script>
+<script src="i18n.js"></script>
+<script src="hesap.js"></script>
+<script src="rapor.js"></script>
+</body>
+</html>

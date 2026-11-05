@@ -1,0 +1,11 @@
+{
+ "surum": "2.0.1",
+ "tarih": "2026-11-03",
+ "notlar": {
+  "tr": "Kasa Jurnali’nin yeni internet adresi: kasajurnali.github.io. Güncellemeler artık buradan gelir.",
+  "en": "Kasa Jurnali’s new web address: kasajurnali.github.io. Updates now come from here."
+ },
+ "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.0.1.exe",
+ "boyut": 18434560,
+ "sha256": "4d88b92bd2bd1cd3fc2e7dbda69b12f3744254d445005ceb53145f13f0803543"
+}
