@@ -1,11 +1,11 @@
 {
- "surum": "2.1.1",
+ "surum": "2.1.2",
  "tarih": "2026-11-06",
  "notlar": {
-  "tr": "Google ile oturum açma düzeltildi. Kayıtlar artık Google Drive’ınızdaki “Kasa Jurnali” klasöründe. Yeni menü, Raporlar sayfası, gelen parada donatan/armatör ve havale, EFT, nakit.",
-  "en": "Sign-in with Google fixed. Records are now kept in a “Kasa Jurnali” folder in your Google Drive. New menu, Reports page, owner and bank transfer, EFT or cash for income."
+  "tr": "Google Drive izni verilmezse artık açık bir uyarı görünür. Menü sadeleşti: üstteki sekmeler kaldırıldı, her menü öğesi kendi sayfasını açar.",
+  "en": "A clear warning now appears if Google Drive permission is not granted. Simpler menu: the tab row is gone and each menu item opens its own page."
  },
- "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.1.1.exe",
- "boyut": 18540032,
- "sha256": "6d0ef9960c757022bc9271ba644b918a6f41cf1e0360be4ff532c9f61529690c"
+ "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.1.2.exe",
+ "boyut": 18540544,
+ "sha256": "41630d12117ba8fa21497c17248be81e1a9476e12dfec0dce3d230b6fd615284"
 }
