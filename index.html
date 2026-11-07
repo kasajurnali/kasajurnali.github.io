@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="kj-token" content="">
-<meta name="kj-surum" content="2.2.1">
+<meta name="kj-surum" content="2.3.0">
 <meta name="kj-dil" content="">
 <meta name="kj-ortam" content="web">
 <link rel="manifest" href="manifest.webmanifest">
@@ -384,6 +384,10 @@ html.web body{-webkit-tap-highlight-color:transparent}
 .kur b{color:#fff;font-weight:700;margin-right:2px}
 .kur{font-family:var(--f-mono);color:var(--on-hull)}
 .kur i{font-style:normal;opacity:.5}
+.muzikb{flex:none;margin-left:auto;width:28px;height:24px;border-radius:7px;border:1px solid rgba(255,255,255,.18);background:transparent;color:var(--brass-bright);display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+.muzikb svg{width:15px;height:15px}.muzikb .cizgi{display:none}
+.muzikb.kapali{color:var(--on-hull-2);opacity:.75}.muzikb.kapali .cizgi{display:inline}
+.muzikb:hover{background:rgba(255,255,255,.08)}.muzikb:focus-visible{outline:2px solid var(--brass-bright);outline-offset:1px}
 .kur em{font-style:normal;font-size:11px;opacity:.9}.kur em.yuk{color:#6FCB98}.kur em.dus{color:#F08A7E}
 @media (prefers-reduced-motion:no-preference){.kurdon{animation:kurkay var(--kursure,30s) linear infinite}.kurkay:hover .kurdon{animation-play-state:paused}@keyframes kurkay{to{transform:translateX(-50%)}}}
 @media (prefers-reduced-motion:reduce){.kurkay{overflow-x:auto}.kparca[aria-hidden]{display:none}}
@@ -451,6 +455,7 @@ html.web body{-webkit-tap-highlight-color:transparent}
 <div class="serit"><div class="wrap seritic">
   <div class="saatler" role="timer" aria-live="off"><span class="starih" id="saatTarih"></span><span><b>UTC</b> <time id="saatUtc">--:--:--</time></span><span><b title="Local Time">LT</b> <time id="saatYerel">--:--:--</time> <small id="saatFark"></small></span></div>
   <div class="kurkay" id="kurKay" hidden><div class="kurdon" id="kurDon"></div></div>
+  <button type="button" class="muzikb" id="muzikBtn" aria-pressed="true" title="Fon müziğini kapat" data-t-title="Fon müziğini kapat" aria-label="Fon müziği" data-t-aria="Fon müziği"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/><path class="cizgi" d="M3 3l18 18"/></svg></button>
 </div></div>
 <div class="band"><div class="wrap">
   <header class="top">

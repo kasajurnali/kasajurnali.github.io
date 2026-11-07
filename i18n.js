@@ -553,6 +553,9 @@
     "{n} fotoğraflı fiş · Dönemi yukarıdan değiştirin.": "{n} receipts with photos · Change the period above.",
     "Bu dönemde fotoğraflı fiş yok. Fiş eklerken fotoğrafını çekin; burada aylara göre görünür.": "No receipts with photos in this period. Take a photo when you add a receipt; it shows here by month.",
     "Google Drive’da da “Fişler” klasöründe aylara göre saklanır.": "Also kept by month in the “Receipts” folder in Google Drive.",
+    "Fon müziği": "Background music",
+    "Fon müziğini kapat": "Turn the background music off",
+    "Fon müziğini aç": "Turn the background music on",
   };
   g.KJ_SOZLUK = { en };
 })(window);

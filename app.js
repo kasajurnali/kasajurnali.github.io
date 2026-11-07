@@ -43,6 +43,7 @@
     document.querySelectorAll(".langsw [data-lang]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === l)));
     renderFoot();
     if (S.kur) kurCiz();
+    muzikDugme();
   }
   async function setLanguage(l) {
     if ((l !== "tr" && l !== "en") || (l === K.lang && S.set.lang === l)) return;
@@ -1309,6 +1310,7 @@
     if (t0.closest("#declineTerms")) { declineTerms(); return; }
     if (mustAccept()) return;
     if (t0.closest("#menuBtn")) { openMenu(); return; }
+    if (t0.closest("#muzikBtn")) { muzikAcKapa(); return; }
     const mo2 = t0.closest("[data-menu]"); if (mo2) { menuSec(mo2.dataset.menu); return; }
     if (t0.closest("#erisimDene")) { const b = t0.closest("#erisimDene"); b.disabled = true; KJSenk.lisansDenetle().then(() => { render(); const k = S.senk && S.senk.izinli; if (k) KJSenk.esitle(); else toast(t("Erişim hâlâ kapalı.")); }); return; }
     if (t0.closest("#erisimYedek")) { backupNow(); return; }
@@ -1508,6 +1510,70 @@
   new MutationObserver(ms => { for (const m of ms) for (const n of m.addedNodes) if (n.nodeType === 1) basliklar(n); else if (n.nodeType === 3 && n.parentElement && n.parentElement.closest(BASLIK)) { const v = basHarfli(n.nodeValue); if (v !== n.nodeValue) n.nodeValue = v; } })
     .observe(document.body, { childList: true, subtree: true });
 
+  /* ---------------- background music: quiet, one 96 s period looped without a seam; on/off remembered on this device ----------------
+     Played through Web Audio (the volume of an <audio> element cannot be lowered on the iPhone). The file holds the loop plus its
+     first 3 s, and exactly one period (1 s – 97 s) is looped, so the MP3's own padding never falls inside the loop. */
+  const MUZIK_SES = 0.14;
+  const MUZIK = { ctx: null, tampon: null, kaynak: null, kazanc: null, yukleniyor: null, acik: (() => { try { return localStorage.getItem("kj-muzik") !== "0"; } catch (e) { return true; } })() };
+  function muzikHazirla() {
+    if (MUZIK.tampon || MUZIK.yukleniyor) return MUZIK.yukleniyor || Promise.resolve();
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return Promise.resolve();
+    MUZIK.ctx = MUZIK.ctx || new AC();
+    MUZIK.yukleniyor = fetch("fon.mp3").then(r => { if (!r.ok) throw new Error(String(r.status)); return r.arrayBuffer(); })
+      .then(b => new Promise((ok, red) => MUZIK.ctx.decodeAudioData(b, ok, red))).then(t => { MUZIK.tampon = t; })
+      .catch(e => { console.warn("fon müziği:", e && e.message); }).finally(() => { MUZIK.yukleniyor = null; });
+    return MUZIK.yukleniyor;
+  }
+  function muzikBaslat() {
+    if (!MUZIK.acik || !MUZIK.tampon || MUZIK.kaynak) return;
+    const c = MUZIK.ctx, k = c.createBufferSource(), g = c.createGain();
+    k.buffer = MUZIK.tampon; k.loop = true; k.loopStart = 1; k.loopEnd = Math.min(97, MUZIK.tampon.duration);
+    g.gain.setValueAtTime(0, c.currentTime); g.gain.linearRampToValueAtTime(MUZIK_SES, c.currentTime + 4);
+    k.connect(g); g.connect(c.destination); k.start(0, 1);
+    MUZIK.kaynak = k; MUZIK.kazanc = g;
+  }
+  function muzikDurdur() {
+    const k = MUZIK.kaynak, g = MUZIK.kazanc, c = MUZIK.ctx;
+    if (!k) return;
+    MUZIK.kaynak = null;
+    const s = c.currentTime;
+    g.gain.cancelScheduledValues(s); g.gain.setValueAtTime(g.gain.value, s); g.gain.linearRampToValueAtTime(0, s + 0.8);
+    k.stop(s + 0.85);
+  }
+  function muzikDugme() {
+    const b = $("#muzikBtn"); if (!b) return;
+    b.setAttribute("aria-pressed", String(MUZIK.acik)); b.classList.toggle("kapali", !MUZIK.acik);
+    b.title = MUZIK.acik ? t("Fon müziğini kapat") : t("Fon müziğini aç");
+  }
+  async function muzikAcKapa() {
+    MUZIK.acik = !MUZIK.acik;
+    try { localStorage.setItem("kj-muzik", MUZIK.acik ? "1" : "0"); } catch (e) { }
+    muzikDugme();
+    if (!MUZIK.acik) { muzikDurdur(); return; }
+    await muzikHazirla();
+    if (MUZIK.ctx && MUZIK.ctx.state === "suspended") await MUZIK.ctx.resume().catch(() => { });
+    muzikBaslat();
+  }
+  function muzikKur() {
+    muzikDugme();
+    if (MUZIK.acik) muzikHazirla().then(muzikBaslat);
+    // the iPhone (and a browser without the program's window) lets sound start only after a touch or a key
+    const ilk = e => {
+      if (e.target && e.target.closest && e.target.closest("#muzikBtn")) return;   // the button decides by itself
+      document.removeEventListener("pointerdown", ilk, true); document.removeEventListener("keydown", ilk, true);
+      if (MUZIK.acik && MUZIK.ctx && MUZIK.ctx.state === "suspended") MUZIK.ctx.resume().then(muzikBaslat).catch(() => { });
+    };
+    document.addEventListener("pointerdown", ilk, true); document.addEventListener("keydown", ilk, true);
+    // quiet while the program is in the background, back when it returns
+    document.addEventListener("visibilitychange", () => {
+      if (!MUZIK.ctx) return;
+      if (document.visibilityState === "hidden") MUZIK.ctx.suspend().catch(() => { });
+      else if (MUZIK.acik) MUZIK.ctx.resume().catch(() => { });
+    });
+  }
+  window.KJmuzik = () => ({ acik: MUZIK.acik, yuklendi: !!MUZIK.tampon, caliyor: !!MUZIK.kaynak, durum: MUZIK.ctx ? MUZIK.ctx.state : "" });   // for the tests
+
   /* ---------------- start ---------------- */
   (async () => {
     saatYaz(); setInterval(saatYaz, 1000);
@@ -1518,6 +1584,7 @@
     const basla = () => { if (S.mode === "live" && needTerms()) openTerms("accept"); else if (S.mode === "live") senkKur(); };
     if (S.mode === "live" && WEB && IOS && !kurulu() && !S.items.length) openKurulum(basla); else basla();
     setInterval(ping, 10000);
+    if (S.mode === "live") muzikKur();
     if (S.mode === "live") { kurYukle(); setInterval(kurYukle, 60e3); document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") kurYukle(); }); }
     if (S.mode === "live" && !WEB) { setTimeout(() => guncelDenetle(false), 12000); setInterval(() => guncelDenetle(false), 3600e3); }
   })();

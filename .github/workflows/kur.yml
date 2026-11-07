@@ -12,9 +12,12 @@ jobs:
   kur:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # no third-party actions: a plain clone with the job's own token
+      - run: git clone --depth 1 "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" s
       - run: python3 .github/kur.py kur.json
-      - run: |
+        working-directory: s
+      - working-directory: s
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add kur.json

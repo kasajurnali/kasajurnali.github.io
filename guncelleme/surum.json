@@ -1,11 +1,12 @@
 {
- "surum": "2.2.1",
+ "surum": "2.3.0",
  "tarih": "2026-11-07",
  "notlar": {
-  "tr": "Kasa Jurnali’nin yeni adı: Yachting Jurnal. Yeni Ana Sayfa kaptanı adıyla karşılar; üst şeritte tarih, UTC ve yerel saat, anlık döviz ve altın kurları. Yeni Fişler sayfası: seçtiğiniz ayın fiş fotoğrafları, Google Drive’da da aylara göre saklanır. Kullanım kılavuzu yenilendi. Kullanım Koşulları yeni adla güncellendi; ilk açılışta bir kez onaylamanız istenir.",
-  "en": "Kasa Jurnali is now called Yachting Jurnal. The new Home page greets the captain by name; the top strip shows the date, UTC and local time, and live currency and gold rates. New Receipts page: the receipt photos of the month you choose, also kept by month in Google Drive. The user guide is updated. The Terms of Use are updated with the new name; you will be asked to accept them once."
+  "en": "New: quiet, relaxing background music (turn it on or off with the ♪ button in the top strip). Security: updates are now verified with the developer’s digital signature. The Terms of Use and Privacy Notice are updated (rate strip, Receipts folder in Drive); you will be asked to accept them once. Also: Kasa Jurnali is now called Yachting Jurnal; Home page, time and live rates, Receipts page.",
+  "tr": "Yeni: kısık sesle çalan, dinlendirici fon müziği (üst şeritteki ♪ düğmesiyle açılıp kapanır). Güvenlik: güncellemeler artık geliştiricinin dijital imzasıyla doğrulanıyor. Kullanım Koşulları ve Gizlilik Bildirimi güncellendi (kur şeridi, Drive’daki Fişler klasörü); ilk açılışta bir kez onaylamanız istenir. Ayrıca: Kasa Jurnali’nin yeni adı Yachting Jurnal; Ana Sayfa, saat ve anlık kurlar, Fişler sayfası."
  },
- "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.2.1.exe",
- "boyut": 19491840,
- "sha256": "4eddea63e60b02cd3562bc8a849592735eead4da8cc1d43baa46fe5c0b41be1b"
+ "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.3.0.exe",
+ "boyut": 20721664,
+ "sha256": "387c2c31bd5f56b2ce39e1675e5fc4f3ccfe377b380f37c0677f6bc2c31e3c45",
+ "imza": "MMIF/wMReSG5a7vh+v1j3upxQiOCarI0ikkAYUBBNtGTglzjzuKfiJ9EUQpX+z2rrY4ntfM3VqKkw+HTwaxpCg=="
 }
