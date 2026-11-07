@@ -1,4 +1,4 @@
-/* Kasa Jurnali — the iPhone app's own storage. It runs inside the service worker (sw.js) and answers the same
+/* Yachting Jurnal — the iPhone app's own storage. It runs inside the service worker (sw.js) and answers the same
    requests as the computer program (app/sunucu.go + app/veri.go), so the window code is the same on both.
    Everything is kept in the app's IndexedDB on the phone: the book, receipt photos and daily backups. */
 "use strict";
@@ -166,8 +166,8 @@
     const { df } = await defterAl();
     const veri = JSON.stringify({ defter: df, aylar, fotograflar: q.get("foto") !== "0", yazdir: false, dil, olusturma: new Date().toISOString(), token: "", surum: g.KJ_SURUM || "", ortam: "web" }).replace(/<\//g, "<\\/");
     const T = dil === "en"
-      ? { alt: "Prepared with Kasa Jurnali · For information only; not an official accounting record.", sayfa: '"Page " counter(page) " of " counter(pages)', yazdir: "Print / PDF", geri: "‹ Back" }
-      : { alt: "Kasa Jurnali ile hazırlanmıştır · Bilgi amaçlıdır; resmî muhasebe kaydı yerine geçmez.", sayfa: '"Sayfa " counter(page) " / " counter(pages)', yazdir: "Yazdır / PDF", geri: "‹ Geri" };
+      ? { alt: "Prepared with Yachting Jurnal · For information only; not an official accounting record.", sayfa: '"Page " counter(page) " of " counter(pages)', yazdir: "Print / PDF", geri: "‹ Back" }
+      : { alt: "Yachting Jurnal ile hazırlanmıştır · Bilgi amaçlıdır; resmî muhasebe kaydı yerine geçmez.", sayfa: '"Sayfa " counter(page) " / " counter(pages)', yazdir: "Yazdır / PDF", geri: "‹ Geri" };
     let h = await sablon.text();
     h = h.split("/*VERI*/null").join(veri).split("{{DIL}}").join(dil).split("{{ALT}}").join(T.alt).split("{{SAYFA}}").join(T.sayfa).split("{{YAZDIR}}").join(T.yazdir)
       .split("{{GERI}}").join('<a class="geri" href="./">' + T.geri + "</a>");
@@ -181,6 +181,14 @@
       if (yol === "api/kimlik") return json({ uygulama: "kasa-jurnali", surum: g.KJ_SURUM || "" });
       if (yol === "api/veri" && m === "GET") return await veri();
       if (yol === "api/ping") return json({ rev: (await al("kv", "rev")) || 0 });
+      if (yol === "api/kur") {   // TCMB rates: kur.json on the site (refreshed there by a scheduled task); the last one stays for offline use
+        try {
+          const r = await fetch(new URL("kur.json", g.registration.scope).href, { cache: "no-store" });
+          if (r.ok) { const y = await r.json(); if (y && Array.isArray(y.kurlar) && y.kurlar.length) { await koy("kv", "kur", y); return json(y); } }
+        } catch (e) { /* offline: fall back to the last rates */ }
+        const eski = await al("kv", "kur");
+        return eski ? json(Object.assign({}, eski, { eski: true })) : json({ hata: "Kurlar alınamadı." }, 502);
+      }
       if (yol === "api/islem" && m === "POST") return await islem(await istek.text(), dil);
       if (yol === "api/foto" && m === "POST") { const id = yeniId(); await fotoKoy(id, istek); return json({ id }); }
       if (yol.startsWith("api/foto/")) {

@@ -1,4 +1,4 @@
-/* Kasa Jurnali — Google Drive synchronisation. The same engine runs in the computer program and on the iPhone.
+/* Yachting Jurnal — Google Drive synchronisation. The same engine runs in the computer program and on the iPhone.
    The book is kept as one file (kasa-verisi.json) and the receipt photos as foto-<id>.jpg in the program's own
    "Kasa Jurnali" folder in the user's Google Drive. The program asks only for "drive.file": it sees the files it
    created itself and nothing else in Drive. (Google does not accept "drive.appdata" for this sign-in method.)
@@ -180,7 +180,7 @@
     if (S.klasorId) return S.klasorId;
     const l = (await gjson("GET", "drive/v3/files?spaces=drive&pageSize=10&orderBy=createdTime&q=" + enc("name='" + KLASOR + "' and mimeType='" + KLASOR_TUR + "' and trashed=false") + "&fields=" + enc("files(id,createdTime)"))).files || [];
     if (l.length) return (S.klasorId = l[0].id);
-    const y = await (await istekOk("POST", "drive/v3/files?fields=id", JSON.stringify({ name: KLASOR, mimeType: KLASOR_TUR, description: "Kasa Jurnali kayıtları ve fiş fotoğrafları. Silmeyin ya da adını değiştirmeyin." }), "application/json")).json();
+    const y = await (await istekOk("POST", "drive/v3/files?fields=id", JSON.stringify({ name: KLASOR, mimeType: KLASOR_TUR, description: "Yachting Jurnal kayıtları ve fiş fotoğrafları. Silmeyin ya da adını değiştirmeyin." }), "application/json")).json();
     return (S.klasorId = y.id);
   }
   const defterDosyalari = async () => { const k = await klasor(); return (await gjson("GET", "drive/v3/files?spaces=drive&pageSize=20&orderBy=createdTime&q=" + enc("name='" + DOSYA + "' and '" + k + "' in parents and trashed=false") + "&fields=" + enc("files(id,version,createdTime)"))).files || []; };
@@ -214,7 +214,8 @@
       if (yerel.has(id) && !uzak.has(id)) {
         const r = await O.ham(O.fotoURL(id)); if (!r.ok) continue;
         const mp = cokParca({ name: "foto-" + id + ".jpg", parents: [k] }, await r.blob(), "image/jpeg");
-        await istekOk("POST", "upload/drive/v3/files?uploadType=multipart&fields=id", mp.govde, mp.tur); giden++;
+        const y = await (await istekOk("POST", "upload/drive/v3/files?uploadType=multipart&fields=id", mp.govde, mp.tur)).json(); giden++;
+        uzak.set(id, { id: y.id, name: "foto-" + id + ".jpg", createdTime: new Date().toISOString() });
       } else if (!yerel.has(id) && uzak.has(id)) {
         const b = await (await istekOk("GET", "drive/v3/files/" + uzak.get(id).id + "?alt=media")).blob();
         const r = await O.ham("api/foto/" + id, { method: "PUT", body: b, headers: { "Content-Type": "image/jpeg" } });
@@ -224,7 +225,49 @@
     // photos no entry uses any more (deleted or replaced on a device); kept for a day in case another device still needs them
     for (const [id, f] of uzak) if (!gerekli.has(id) && Date.now() - Date.parse(f.createdTime || 0) > 864e5) await T().istek("DELETE", "drive/v3/files/" + f.id).catch(() => { });
     await O.api("api/foto-temizle", { method: "POST", json: { tut: [...gerekli] } }).catch(() => { });
-    return { gelen, giden };
+    return { gelen, giden, uzak };
+  }
+
+  /* ---------------- monthly receipt archive: <folder>/Fişler/<2026-11 Kasım 2026>/<2026-11-24 Palamar 400,00 ₺>.jpg ----------------
+     Readable copies for the user, made inside Drive (nothing is uploaded again). The foto-<id>.jpg files above stay the
+     ones the devices synchronise from; the archive only ever adds copies, and moves one when an entry changes month.
+     Folders and copies are found by their appProperties, so the names may be in either language. */
+  const AP = (k, v) => "appProperties has { key='" + k + "' and value='" + v + "' }";
+  async function apListe(filtre, alanlar) {
+    const l = []; let sayfa = "";
+    do {
+      const r = await gjson("GET", "drive/v3/files?spaces=drive&pageSize=1000&orderBy=createdTime&q=" + enc(filtre + " and trashed=false") + "&fields=" + enc("nextPageToken,files(" + alanlar + ")") + (sayfa ? "&pageToken=" + enc(sayfa) : ""));
+      l.push(...(r.files || [])); sayfa = r.nextPageToken || "";
+    } while (sayfa);
+    return l;
+  }
+  async function apKlasor(anahtar, deger, ad, ust) {
+    const l = await apListe(AP(anahtar, deger) + " and mimeType='" + KLASOR_TUR + "'", "id");
+    if (l.length) return l[0].id;
+    return (await (await istekOk("POST", "drive/v3/files?fields=id", JSON.stringify({ name: ad, mimeType: KLASOR_TUR, parents: [ust], appProperties: { [anahtar]: deger } }), "application/json")).json()).id;
+  }
+  const dosyaAdi = s => s.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").replace(/\s+/g, " ").trim().slice(0, 120);
+  async function fisArsivi(D, uzak) {
+    const kayitlar = (D.kayitlar || []).filter(e => typeof e.photo === "string" && uzak.has(e.photo));
+    if (!kayitlar.length) return 0;
+    const fisler = S.fislerId || (S.fislerId = await apKlasor("kjFisler", "1", K.t("Fişler"), await klasor()));
+    const var_ = new Map();
+    for (const f of await apListe(AP("kjFis", "1"), "id,parents,appProperties")) { const p = f.appProperties || {}; if (p.kjFoto && !var_.has(p.kjFoto)) var_.set(p.kjFoto, f); }
+    const aylar = new Map();
+    const ayKlasoru = async ym => { if (!aylar.has(ym)) aylar.set(ym, await apKlasor("kjAy", ym, ym === "tarihsiz" ? K.t("Tarihsiz") : ym + " " + K.monthLabel(ym), fisler)); return aylar.get(ym); };
+    let n = 0;
+    for (const e of kayitlar) {
+      if (n >= 60) break;   // a large first archive continues on the next synchronisation
+      const ym = /^\d{4}-\d\d/.test(e.date || "") ? e.date.slice(0, 7) : "tarihsiz";
+      const ad = dosyaAdi([e.date || "", e.vendor || e.desc || "", (K.isIn(e) ? "+" : "") + K.tl(+e.amount || 0)].filter(Boolean).join(" ")) + ".jpg";
+      const f = var_.get(e.photo);
+      if (!f) {
+        await istekOk("POST", "drive/v3/files/" + enc(uzak.get(e.photo).id) + "/copy?fields=id", JSON.stringify({ name: ad, parents: [await ayKlasoru(ym)], appProperties: { kjFis: "1", kjFoto: e.photo, kjAy: ym } }), "application/json"); n++;
+      } else if ((f.appProperties || {}).kjAy !== ym) {
+        await istekOk("PATCH", "drive/v3/files/" + enc(f.id) + "?addParents=" + enc(await ayKlasoru(ym)) + "&removeParents=" + enc((f.parents || []).join(",")) + "&fields=id", JSON.stringify({ name: ad, appProperties: { kjAy: ym } }), "application/json"); n++;
+      }
+    }
+    return n;
   }
 
   /* ---------------- one synchronisation ---------------- */
@@ -274,6 +317,7 @@
         if (yerelDegisti || S.ilk || surum !== (ana && String(ana.version)) || Date.now() - S.sonFoto > 10 * 60000) {
           const f = await fotolar(birlesik); S.sonFoto = Date.now();
           if (ozet) Object.assign(ozet, { fotoGelen: f.gelen, fotoGiden: f.giden });
+          try { await fisArsivi(birlesik, f.uzak); } catch (e) { if (e.kod === "izin") throw e; console.warn("fiş arşivi:", e.message); }   // the archive never stops a synchronisation
           if (f.gelen) yerelDegisti = true;
         }
         break;
@@ -313,7 +357,7 @@
     return r;
   }
 
-  /* ---------------- access: may this Google account use Kasa Jurnali? (yonetim/Kod.gs) ---------------- */
+  /* ---------------- access: may this Google account use Yachting Jurnal? (yonetim/Kod.gs) ---------------- */
   const bugunISO = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
   // without internet the last answer is used for 14 days, and never past its end date
   function izinli(L) {

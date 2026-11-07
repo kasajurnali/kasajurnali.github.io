@@ -1,4 +1,4 @@
-/* Kasa Jurnali — shared bookkeeping rules and language support, used by the window and the PDF report. */
+/* Yachting Jurnal — shared bookkeeping rules and language support, used by the window and the PDF report. */
 "use strict";
 (function (g) {
   const pad = n => String(n).padStart(2, "0");

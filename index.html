@@ -4,19 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="kj-token" content="">
-<meta name="kj-surum" content="2.1.2">
+<meta name="kj-surum" content="2.2.0">
 <meta name="kj-dil" content="">
 <meta name="kj-ortam" content="web">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="ikon-180.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Kasa Jurnali">
+<meta name="apple-mobile-web-app-title" content="Yachting Jurnal">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0E2740">
-<meta name="description" content="Kasa Jurnali — yatlar ve küçük işletmeler için kasa defteri. Telefonda ve bilgisayarda aynı defter.">
+<meta name="description" content="Yachting Jurnal — yatlar ve küçük işletmeler için kasa defteri. Telefonda ve bilgisayarda aynı defter.">
 <script>document.documentElement.classList.add("web")</script>
-<title>Kasa Jurnali</title>
+<title>Yachting Jurnal</title>
 <link rel="icon" href="ikon.png">
 <style>
 /* Layout: night-chart header band (depth contours, compass rose, K·A·S·A signal flags) over chart-paper body — single-column cash book */
@@ -356,7 +356,7 @@ body.girisli .tabs,body.girisli #fab,body.girisli .period,body.girisli .kasa,bod
 .ybitis{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.ybitis input{flex:1 1 160px}
 @media (max-width:520px){.ysay{grid-template-columns:repeat(3,minmax(0,1fr))}}
 /* iPhone app (html.web): room for the status bar and the home indicator, no zoom when a box is tapped */
-html.web .band{padding-top:env(safe-area-inset-top)}
+html.web .serit{padding-top:env(safe-area-inset-top)}
 html.web .fabs{bottom:calc(14px + env(safe-area-inset-bottom))}
 html.web footer{padding-bottom:calc(110px + env(safe-area-inset-bottom))}
 html.web input,html.web select,html.web textarea{font-size:16px}
@@ -369,15 +369,95 @@ html.web body{-webkit-tap-highlight-color:transparent}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(14px);opacity:.7}to{transform:none;opacity:1}}}
 @media (max-width:720px){.kasa{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2p{grid-template-columns:1fr}.kv{grid-template-columns:1fr 1fr}}
 @media (max-width:520px){.wrap{padding-left:14px;padding-right:14px}.grid2{grid-template-columns:1fr}.kc{padding:9px 11px}.fab{padding:12px 16px 12px 13px}.fab2{padding:11px 14px 11px 11px}.fabs{right:12px;bottom:12px}}
+/* strip: clocks and exchange rates */
+.serit{background:#061420;color:var(--on-hull-2);font:500 12.5px/1 var(--f-body);border-bottom:1px solid rgba(255,255,255,.07)}
+.seritic{display:flex;align-items:center;gap:16px;min-height:30px;padding-top:0;padding-bottom:0}
+.saatler{display:flex;gap:14px;flex:none;white-space:nowrap}
+.saatler b{color:var(--brass-bright);font-weight:700;letter-spacing:.06em;font-size:11px}
+.saatler time{font-family:var(--f-mono);color:var(--on-hull);font-size:12.5px}
+.saatler small{font-size:10.5px;opacity:.8}
+.starih{color:var(--on-hull);font-weight:600}
+.kurkay{flex:1;min-width:0;overflow:hidden;-webkit-mask-image:linear-gradient(90deg,transparent,#000 24px,#000 calc(100% - 24px),transparent);mask-image:linear-gradient(90deg,transparent,#000 24px,#000 calc(100% - 24px),transparent)}
+.kurdon{display:flex;width:max-content}
+.kparca{display:flex;align-items:center;gap:22px;padding-right:22px;white-space:nowrap}
+.kbas{color:var(--brass-bright);font-size:11px;letter-spacing:.04em}
+.kur b{color:#fff;font-weight:700;margin-right:2px}
+.kur{font-family:var(--f-mono);color:var(--on-hull)}
+.kur i{font-style:normal;opacity:.5}
+.kur em{font-style:normal;font-size:11px;opacity:.9}.kur em.yuk{color:#6FCB98}.kur em.dus{color:#F08A7E}
+@media (prefers-reduced-motion:no-preference){.kurdon{animation:kurkay var(--kursure,30s) linear infinite}.kurkay:hover .kurdon{animation-play-state:paused}@keyframes kurkay{to{transform:translateX(-50%)}}}
+@media (prefers-reduced-motion:reduce){.kurkay{overflow-x:auto}.kparca[aria-hidden]{display:none}}
+@media (max-width:520px){.seritic{gap:10px}.saatler{gap:10px}.saatler small{display:none}.starih{display:none}}
+/* receipts page */
+.fisbas{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}
+.fisbas h3{margin:0 0 4px}
+.fisdrive{margin:0;color:var(--ok)}
+.fisizgara{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.fiskart{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column}
+.fisfoto{all:unset;cursor:zoom-in;display:block;aspect-ratio:3/4;background:var(--sunk)}
+.fisfoto img{width:100%;height:100%;object-fit:cover;display:block}
+.fisfoto:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.fiskart figcaption{padding:10px 12px;display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
+.fiskart figcaption .linkbtn{text-align:left;padding:0;color:var(--ink)}
+.fiskart .ftut{font:600 14px/1.2 var(--f-mono);color:var(--ink)}
+.fiskart .ftut.in{color:var(--ok)}
+@media (max-width:520px){.fisizgara{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
+/* home page */
+.ana{display:flex;flex-direction:column;gap:18px;padding-bottom:10px}
+.kahraman{position:relative;overflow:hidden;border-radius:18px;margin-top:6px;background:radial-gradient(900px 420px at 75% 0%,#1A4670 0%,var(--hull) 55%,#081A2C 100%);color:var(--on-hull);min-height:340px;box-shadow:var(--shadow)}
+.kahraman .sahne{position:absolute;left:0;right:0;bottom:0;width:100%;height:240px;color:var(--brass-bright)}
+.sayfabas:empty{display:none}
+.kyazi{position:relative;padding:30px 30px 92px;max-width:680px}
+.kyazi .selam{font:700 12px/1 var(--f-body);letter-spacing:.2em;text-transform:uppercase;color:var(--brass-bright)}
+.kyazi h1{margin:10px 0 6px;font:800 44px/1.05 var(--f-display);letter-spacing:-.01em;color:#fff}
+.kyazi p{margin:0 0 18px;font-size:17px;color:var(--on-hull-2);font-style:italic}
+.kyazi p.kad{margin:-8px 0 16px;font-style:normal;font-size:14px}.kyazi .linkbtn{color:var(--brass-bright)}
+.kyazi .btns{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-start;margin-left:0}
+.btn.acik{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.28);color:#fff}
+.btn.acik:hover{background:rgba(255,255,255,.18)}
+.yildiz{fill:#fff;opacity:.5}
+.tad{font:700 5px/1 var(--f-display);letter-spacing:.08em;fill:#132F4C}
+.tekne{transform:translate(588px,174px);transform-origin:50% 100%}
+.hakkinda h2{margin:0 0 10px;font:700 18px/1.2 var(--f-display)}
+.ozellikler{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.ozellik{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:6px;transition:transform .2s,box-shadow .2s}
+.ozellik:hover{transform:translateY(-3px);box-shadow:var(--shadow)}
+.ozellik b{font-size:15px}
+.ozellik>span:last-child{font-size:13.5px;color:var(--muted)}
+.oik{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--brass-soft);color:var(--brass);margin-bottom:4px}
+.oik svg{width:24px;height:24px}
+.anasurum{text-align:center;margin:16px 0 0;color:var(--muted)}
+@media (prefers-reduced-motion:no-preference){
+  .dalgalar .dl{animation:dalga 9s linear infinite}
+  .dalgalar.on .dl{animation-duration:6.5s}
+  .dalgalar.on2 .dl{animation-duration:4.5s}
+  @keyframes dalga{to{transform:translateX(-200px)}}
+  .tekne{animation:sallan 4.5s ease-in-out infinite;transform-box:fill-box}
+  @keyframes sallan{0%,100%{transform:translate(588px,174px) rotate(-.8deg)}50%{transform:translate(596px,171px) rotate(.8deg)}}
+  .pusula .don{animation:don 60s linear infinite}
+  @keyframes don{to{transform:rotate(360deg)}}
+  .yildiz{animation:parla 3.2s ease-in-out infinite;animation-delay:calc(var(--i) * -.45s)}
+  @keyframes parla{0%,100%{opacity:.15}50%{opacity:.85}}
+  .ana.anim .kyazi>*{animation:yuksel .7s cubic-bezier(.2,.8,.2,1) both}
+  .ana.anim .kyazi h1{animation-delay:.08s}.ana.anim .kyazi p{animation-delay:.16s}.ana.anim .kyazi .btns{animation-delay:.24s}
+  .ana.anim .ozellik{animation:yuksel .6s cubic-bezier(.2,.8,.2,1) both;animation-delay:calc(.35s + var(--i) * 80ms)}
+  @keyframes yuksel{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+}
+@media (max-width:720px){.ozellikler{grid-template-columns:repeat(2,minmax(0,1fr))}.kyazi h1{font-size:36px}}
+@media (max-width:520px){.pusula{display:none}.ozellikler{grid-template-columns:1fr}.kyazi{padding:22px 18px 170px}}
 </style>
 </head>
 <body>
+<div class="serit"><div class="wrap seritic">
+  <div class="saatler" role="timer" aria-live="off"><span class="starih" id="saatTarih"></span><span><b>UTC</b> <time id="saatUtc">--:--:--</time></span><span><b title="Local Time">LT</b> <time id="saatYerel">--:--:--</time> <small id="saatFark"></small></span></div>
+  <div class="kurkay" id="kurKay" hidden><div class="kurdon" id="kurDon"></div></div>
+</div></div>
 <div class="band"><div class="wrap">
   <header class="top">
     <div class="flag"><span class="ics" title="K · A · S · A — uluslararası işaret sancakları" data-t-title="K · A · S · A — uluslararası işaret sancakları" aria-hidden="true"><i class="k"></i><i class="a"></i><i class="s"></i><i class="a"></i></span><span id="bookName">Günlük harcama ve kasa takibi</span>
       <span class="savewrap"><span class="langsw" role="group" aria-label="Dil / Language"><button type="button" data-lang="tr" aria-pressed="true">TR</button><button type="button" data-lang="en" aria-pressed="false">EN</button></span><button type="button" class="senkb" id="senkBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5z"/></svg><span id="senkLbl"></span></button><span class="savest" id="saveState">Açılıyor…</span><button class="savebtn busy" id="saveNow" title="Kaydet (Ctrl+S)" data-t-title="Kaydet (Ctrl+S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg><span id="saveLbl" data-t>Kaydet</span></button></span></div>
     <div class="headrow">
-      <div class="brand"><button type="button" class="menub" id="menuBtn" aria-label="Menü" title="Menü" data-t-aria="Menü" data-t-title="Menü"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><svg class="rose" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18.5" fill="none" stroke="currentColor" stroke-opacity=".45"/><circle cx="20" cy="20" r="14" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="1 2.2"/><path d="M20 2 L23 17 L38 20 L23 23 L20 38 L17 23 L2 20 L17 17 Z" fill="currentColor" fill-opacity=".35"/><path d="M20 2 L23 17 L20 20 L17 17 Z M38 20 L23 23 L20 20 L23 17 Z" fill="currentColor"/><path d="M20 38 L17 23 L20 20 L23 23 Z M2 20 L17 17 L20 20 L17 23 Z" fill="currentColor" fill-opacity=".6"/><circle cx="20" cy="20" r="2" fill="#0E2740"/></svg><h1>Kasa Jurnali</h1></div>
+      <div class="brand"><button type="button" class="menub" id="menuBtn" aria-label="Menü" title="Menü" data-t-aria="Menü" data-t-title="Menü"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><svg class="rose" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18.5" fill="none" stroke="currentColor" stroke-opacity=".45"/><circle cx="20" cy="20" r="14" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="1 2.2"/><path d="M20 2 L23 17 L38 20 L23 23 L20 38 L17 23 L2 20 L17 17 Z" fill="currentColor" fill-opacity=".35"/><path d="M20 2 L23 17 L20 20 L17 17 Z M38 20 L23 23 L20 20 L23 17 Z" fill="currentColor"/><path d="M20 38 L17 23 L20 20 L23 23 Z M2 20 L17 17 L20 20 L17 23 Z" fill="currentColor" fill-opacity=".6"/><circle cx="20" cy="20" r="2" fill="#0E2740"/></svg><h1>Yachting Jurnal</h1></div>
       <div class="period">
         <label for="periodSel" data-t>Dönem</label>
         <button class="navb" id="prevM" aria-label="Önceki ay" title="Önceki ay" data-t-aria="Önceki ay" data-t-title="Önceki ay"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg></button>
@@ -393,7 +473,7 @@ html.web body{-webkit-tap-highlight-color:transparent}
   </header>
 </div></div>
 <nav class="tabs"><div class="wrap">
-  <h2 class="sayfabas" id="sayfaBas">Jurnal</h2>
+  <h2 class="sayfabas" id="sayfaBas">Ana sayfa</h2>
 </div></nav>
 <main class="wrap" id="main"><div class="loading">Jurnal açılıyor…</div></main>
 <div class="wrap"><footer><span id="footPath">Kayıtlar bu bilgisayarda saklanır. İnternet gerekmez.</span><span id="footKeys"></span></footer></div>

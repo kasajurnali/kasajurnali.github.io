@@ -1,4 +1,4 @@
-/* Kasa Jurnali — Excel (.xlsx) writing and reading for the iPhone app (the computer program does the same in Go,
+/* Yachting Jurnal — Excel (.xlsx) writing and reading for the iPhone app (the computer program does the same in Go,
    app/excel.go; both produce the same workbook). Works in a page and in the app's service worker:
    no DOM, no outside library. Writing stores the parts uncompressed; reading also understands compressed files. */
 "use strict";
@@ -163,8 +163,8 @@
     rels += '<Relationship Id="rId' + (sayfalar.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
     const hepsi = [["[Content_Types].xml", ct], ...P,
       ["_rels/.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>'],
-      ["docProps/core.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Kasa Jurnali</dc:title><dc:creator>Kasa Jurnali</dc:creator></cp:coreProperties>'],
-      ["docProps/app.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Kasa Jurnali</Application></Properties>'],
+      ["docProps/core.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Yachting Jurnal</dc:title><dc:creator>Yachting Jurnal</dc:creator></cp:coreProperties>'],
+      ["docProps/app.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Yachting Jurnal</Application></Properties>'],
       ["xl/workbook.xml", wb], ["xl/_rels/workbook.xml.rels", rels], ["xl/styles.xml", stiller(dil)]];
     return zipYaz(hepsi.map(([a, s]) => [a, utf8(s)]));
   }

@@ -1,4 +1,4 @@
-/* Kasa Jurnali — printable A4 cash report. Built from the data the program injects. */
+/* Yachting Jurnal — printable A4 cash report. Built from the data the program injects. */
 "use strict";
 (function () {
   const K = window.KJ, D = window.__RAPOR;
@@ -15,7 +15,7 @@
   const made = D.olusturma ? new Date(D.olusturma) : new Date();
   const madeStr = dmy(made.getFullYear() + "-" + pad(made.getMonth() + 1) + "-" + pad(made.getDate()));
   const token = encodeURIComponent(D.token || "");
-  const name = set.name || "Kasa Jurnali";
+  const name = set.name || "Yachting Jurnal";
   const inMonth = m => items.filter(e => (e.date || "").slice(0, 7) === m).sort(K.cmpEntry);
   const span = months.length > 1 ? monthLabel(months[0]) + " – " + monthLabel(months[months.length - 1]) : monthLabel(months[0]);
 
@@ -25,7 +25,7 @@
 
   const flags = '<span class="ics" aria-hidden="true"><i class="k"></i><i class="a"></i><i class="s"></i><i class="a"></i></span>';
   const head = (title, period, status) =>
-    '<header class="rh"><div><div class="ust">' + flags + '<span>Kasa Jurnali</span></div><div class="kurum">' + esc(name) + '</div><h1>' + esc(title) + '</h1></div>' +
+    '<header class="rh"><div><div class="ust">' + flags + '<span>Yachting Jurnal</span></div><div class="kurum">' + esc(name) + '</div><h1>' + esc(title) + '</h1></div>' +
     '<div class="rh-r"><div class="etk">' + esc(t("Dönem")) + '</div><div class="donem">' + esc(period) + '</div><div class="meta">' + esc(t("Rapor tarihi: {tarih}", { tarih: madeStr })) + '</div>' + (status || "") + '</div></header>';
 
   let html = "";
