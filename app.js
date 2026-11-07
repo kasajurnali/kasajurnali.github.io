@@ -1033,7 +1033,7 @@
       '<div class="yayar">' + [["Deneme", t("Deneme süresi verilsin")], ["Kapalı", t("Ben açana kadar kapalı kalsın")], ["Açık", t("Süresiz açık olsun")]].map(([v, l2]) => '<label class="check"><input type="radio" name="yYeni" value="' + v + '"' + (A.yeniDurum === v ? " checked" : "") + '> <span>' + esc(l2) + '</span></label>').join("") + '</div>' +
       '<div class="field" style="max-width:220px;margin-top:8px"><label for="yGun">' + esc(t("Deneme süresi (gün)")) + '</label><input id="yGun" type="number" min="1" max="3650" inputmode="numeric" value="' + esc(A.denemeGun) + '"></div>' +
       '<div class="btns" style="justify-content:flex-start;margin-top:10px"><button type="button" class="btn pri" id="yAyarKaydet">' + esc(t("Kaydet")) + '</button></div>' +
-      '<p class="small" style="margin:12px 0 0">' + esc(t("Liste Google Drive’ınızdaki “Kasa Jurnali Yönetim” tablosunda durur; oradan da düzenleyebilirsiniz.")) + '</p></div>';
+      '<p class="small" style="margin:12px 0 0">' + esc(t("Liste Google Drive’ınızdaki “Yachting Jurnal Yönetim” tablosunda durur; oradan da düzenleyebilirsiniz.")) + '</p></div>';
     return h;
   }
   function openYKisi(eposta) {

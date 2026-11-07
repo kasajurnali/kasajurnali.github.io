@@ -490,7 +490,7 @@
     "Ben açana kadar kapalı kalsın": "Keep closed until I open it",
     "Süresiz açık olsun": "Open with no end date",
     "Deneme süresi (gün)": "Trial period (days)",
-    "Liste Google Drive’ınızdaki “Kasa Jurnali Yönetim” tablosunda durur; oradan da düzenleyebilirsiniz.": "The list is kept in the “Kasa Jurnali Yönetim” spreadsheet in your Google Drive; you can also edit it there.",
+    "Liste Google Drive’ınızdaki “Yachting Jurnal Yönetim” tablosunda durur; oradan da düzenleyebilirsiniz.": "The list is kept in the “Yachting Jurnal Yönetim” spreadsheet in your Google Drive; you can also edit it there.",
     "İlk giriş {zaman}": "First sign-in {zaman}",
     "{n} giriş": "{n} sign-ins",
     "Google hesabı (e-posta)": "Google account (e-mail)",

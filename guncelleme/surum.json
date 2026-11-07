@@ -1,11 +1,11 @@
 {
- "surum": "2.2.0",
+ "surum": "2.2.1",
  "tarih": "2026-11-07",
  "notlar": {
-  "tr": "Kasa Jurnali’nin yeni adı: Yachting Jurnal. Yeni Ana Sayfa kaptanı adıyla karşılar. Üst şeritte tarih, UTC ve yerel saat, anlık döviz ve altın kurları. Yeni Fişler sayfası: seçtiğiniz ayın fiş fotoğrafları; Google Drive’da da Fişler klasöründe aylara göre saklanır. Kullanım Koşulları yeni adla güncellendi; ilk açılışta bir kez onaylamanız istenir.",
-  "en": "Kasa Jurnali is now called Yachting Jurnal. The new Home page greets the captain by name. The top strip shows the date, UTC and local time, and live currency and gold rates. New Receipts page: the receipt photos of the month you choose, also kept by month in the Receipts folder in Google Drive. The Terms of Use are updated with the new name; you will be asked to accept them once."
+  "tr": "Kullanım kılavuzu yenilendi: Ana Sayfa, üst şerit (saat ve kurlar) ve Fişler sayfası anlatılıyor. Yönetim Merkezi’ndeki tablo adı güncellendi.",
+  "en": "The user guide is updated: it now covers the Home page, the top strip (time and rates) and the Receipts page. The spreadsheet name in the Admin Centre is updated."
  },
- "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.2.0.exe",
- "boyut": 18626048,
- "sha256": "2effe43cce93e3788e709730a1566117931d812c6863067fe08f5b8797a2f7ce"
+ "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.2.1.exe",
+ "boyut": 19491840,
+ "sha256": "4eddea63e60b02cd3562bc8a849592735eead4da8cc1d43baa46fe5c0b41be1b"
 }
