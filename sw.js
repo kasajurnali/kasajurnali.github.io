@@ -2,9 +2,9 @@
    answers the window's requests from the phone's own storage (yerel.js), and installs new versions:
    a new version waits until the app is opened again (or "Update now" is tapped), then takes over. */
 "use strict";
-const SURUM = "2.4.0-30a20e6bbc93";
+const SURUM = "2.5.0-f228ac966a87";
 const DOSYALAR = ["index.html", "app.js", "hesap.js", "i18n.js", "yasal.js", "google.js", "senk.js", "xlsx.js", "yerel.js", "rapor.html", "rapor.js", "manifest.webmanifest", "ikon.png", "ikon-180.png", "ikon-192.png", "ikon-512.png", "favicon.ico", "fon.mp3"];
-self.KJ_SURUM = "2.4.0";
+self.KJ_SURUM = "2.5.0";
 importScripts("xlsx.js", "yerel.js");
 const ONBELLEK = "kj-" + SURUM;
 const kapsam = () => new URL(self.registration.scope);

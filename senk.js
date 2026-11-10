@@ -87,7 +87,7 @@
       if (status === 200 && m.refresh_token) {
         web.cihazKodu = "";
         const k = { yenileme: m.refresh_token, erisim: m.access_token, bitis: Date.now() + (m.expires_in || 3600) * 1000, hesap: "" };
-        try { const r = await fetch(a.api + "/drive/v3/about?fields=user(emailAddress)", { headers: { Authorization: "Bearer " + k.erisim } }); k.hesap = ((await r.json()).user || {}).emailAddress || ""; } catch (e) { }
+        try { const r = await fetch(a.oauth + "/tokeninfo?access_token=" + encodeURIComponent(k.erisim)); k.hesap = (await r.json()).email || ""; } catch (e) { }
         await web.kaydet(k); web._k = k;
         return { durum: "tamam", hesap: k.hesap };
       }
@@ -385,7 +385,7 @@
   const lisansZamani = () => S.bagli && S.lisansAcik && Date.now() - S.lisansSon > (S.lisansSon ? LISANS_ARALIK : 110000);
   async function yonetim(govde) {
     const c = await T().yonetim(govde);
-    if (c.hata) throw hata({ yetki: K.t("Bu işlem için yetkiniz yok."), eposta: K.t("E-posta adresini kontrol edin."), tarih: K.t("Tarihi kontrol edin."), paket: K.t("Paketi kontrol edin."), fiyat: K.t("Fiyatı kontrol edin."), kayit: K.t("Hesap kaydı bulunamadı; uygulamayı yeniden açın."), islem: K.t("Bu bölüm, erişim sunucusu güncellenince açılacak."), gecersiz: K.t("Google hesabı doğrulanamadı; yeniden oturum açın.") }[c.hata] || K.t("Erişim sunucusu yanıt vermedi."), c.hata);
+    if (c.hata) throw hata({ yetki: K.t("Bu işlem için yetkiniz yok."), eposta: K.t("E-posta adresini kontrol edin."), tarih: K.t("Tarihi kontrol edin."), paket: K.t("Paketi kontrol edin."), fiyat: K.t("Fiyatı kontrol edin."), kayit: K.t("Hesap kaydı bulunamadı; uygulamayı yeniden açın."), yonetici: K.t("Yönetici hesabı uygulamadan silinemez."), yogun: K.t("Erişim sunucusu şu an çok yoğun; birkaç dakika sonra yeniden deneyin."), islem: K.t("Bu bölüm, erişim sunucusu güncellenince açılacak."), gecersiz: K.t("Google hesabı doğrulanamadı; yeniden oturum açın.") }[c.hata] || K.t("Erişim sunucusu yanıt vermedi."), c.hata);
     return c;
   }
   async function cikis() {

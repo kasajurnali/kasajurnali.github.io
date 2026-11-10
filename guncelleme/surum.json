@@ -1,12 +1,13 @@
 {
- "surum": "2.4.0",
+ "surum": "2.5.0",
  "tarih": "2026-11-10",
  "notlar": {
-  "en": "New My Account and Subscription page: your plan, end date, payment history and plan prices. Also a small fix in the rate strip. The example texts in the boxes now use general wording.",
-  "tr": "Yeni Hesabım ve Abonelik sayfası: paketiniz, bitiş tarihiniz, ödeme geçmişiniz ve paket fiyatları. Ayrıca kur şeridinde küçük bir düzeltme. Kutulardaki örnek metinler genel ifadelerle değiştirildi."
+  "en": "Our new web address: yachtingjurnal.com. Updates now come from here. “Delete my account” is added to the My Account page. The Privacy Notice is updated (summary of Google data, account deletion); you will be asked to accept it once.",
+  "tr": "Yeni internet adresimiz: yachtingjurnal.com. Güncellemeler artık buradan gelir. Hesabım sayfasına “Hesabımı sil” eklendi. Gizlilik Bildirimi güncellendi (Google verileri özeti, hesap silme); ilk açılışta bir kez onaylamanız istenir."
  },
- "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.4.0.exe",
- "boyut": 20767744,
- "sha256": "8a2c5bc0f00fef326b302920b2464feb8b0a2376043e3722051a4ee5e7d67377",
- "imza": "yAIYQIsR64UzXTcja2IRlHwBN23zUVugsp2TToSRbYWtt3ZF/gEIlptbJOCFAGsrMtpYMcQxsrOSxtqqySqTAw=="
+ "dosya": "https://yachtingjurnal.com/guncelleme/KasaJurnali-Kurulum-2.5.0.exe",
+ "boyut": 20833280,
+ "sha256": "c878548084bb6cd2dc975093e2e4a1bda1bb4dda94968685e3dbc4fdf3352405",
+ "adres": "https://yachtingjurnal.com/guncelleme/",
+ "imza": "JLTf1Y/0UH5QjTK2/MfWXGOusJs2u/1WMCYUexrjNWdQxwE3MIRrnKXogxRVRq4hnd3jnM8PXZSbolL0K1U/AA=="
 }

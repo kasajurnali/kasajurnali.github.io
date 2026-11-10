@@ -348,7 +348,7 @@
       '<div class="btns"><button type="button" class="btn pri" data-go="list">' + esc(t("Jurnal’i aç")) + '</button><button type="button" class="btn acik" data-new>' + esc(t("Fiş ekle")) + '</button><button type="button" class="btn acik" data-addin>' + esc(t("Gelen para")) + '</button></div></div></section>' +
       '<section class="hakkinda"><h2>' + esc(t("Yachting Jurnal hakkında")) + '</h2><p class="lead">' + esc(t("Yachting Jurnal; yatlar, tekneler ve küçük işletmeler için hazırlanmış bir kasa defteridir. Harcamaları ve gelen parayı (donatan avansı, havale, EFT, nakit) fiş fotoğraflarıyla kaydeder, kasayı her fişte kendiliğinden hesaplar, ay sonunda imza alanlı PDF rapor ve Excel tablosu hazırlar.")) + '</p><div class="ozellikler">' +
       ANA_OZ.map(([ik, b, a], n) => '<div class="ozellik" style="--i:' + n + '"><span class="oik">' + anaIk(ik) + '</span><b>' + esc(t(b)) + '</b><span>' + esc(t(a)) + '</span></div>').join("") +
-      '</div><p class="small anasurum">Yachting Jurnal ' + esc(SURUM || "") + ' · kasajurnali.github.io</p></section></div>';
+      '</div><p class="small anasurum">Yachting Jurnal ' + esc(SURUM || "") + ' · yachtingjurnal.com</p></section></div>';
   }
   /* ---------------- receipts page: the photos of the period chosen above ---------------- */
   function viewFisler() {
@@ -1170,9 +1170,8 @@
     const O = V.odemeler || [];
     h += '<div class="panel"><h3>' + esc(t("Ödeme geçmişi")) + '</h3>' + (O.length ? '<div class="ytablo"><table><thead><tr><th>' + [t("Tarih"), t("Paket"), t("Tutar"), t("Durum")].map(esc).join("</th><th>") + '</th></tr></thead><tbody>' +
       O.map(o => '<tr><td>' + esc(o.tarih ? dmy(o.tarih.slice(0, 10)) : "") + '</td><td>' + esc((PAKET_ADI()[o.paket] || o.paket) + " · " + (o.donem === "yillik" ? t("yıllık") : t("aylık"))) + '</td><td class="num">' + esc(para(o.tutar, o.para)) + '</td><td>' + esc(t(o.durum)) + '</td></tr>').join("") + '</tbody></table></div>' : '<p class="small" style="margin:0">' + esc(t("Henüz ödeme yok.")) + '</p>') + '</div>';
-    const konu = encodeURIComponent("Hesap silme talebi / Account deletion request"), govde = encodeURIComponent((K.lang === "en" ? "Please delete my Yachting Jurnal account: " : "Yachting Jurnal hesabımın silinmesini istiyorum: ") + V.hesap);
-    h += '<div class="panel"><h3>' + esc(t("Abonelik ve hesap işlemleri")) + '</h3><p class="lead">' + esc(t("Aboneliğinizi değiştirmek ya da iptal etmek için kasajurnali@gmail.com adresine yazabilirsiniz. Hesabınızın silinmesini istediğinizde erişim kaydınız silinir; kasa kayıtlarınız zaten sizin cihazınızda ve kendi Google Drive’ınızda durur, onları siz silersiniz.")) + '</p>' +
-      '<div class="btns" style="justify-content:flex-start"><a class="btn" href="mailto:kasajurnali@gmail.com?subject=' + encodeURIComponent("Abonelik / Subscription") + '">' + esc(t("Destek ve abonelik")) + '</a><a class="btn danger" href="mailto:kasajurnali@gmail.com?subject=' + konu + '&body=' + govde + '">' + esc(t("Hesabımı silme talebi")) + '</a></div></div>';
+    h += '<div class="panel"><h3>' + esc(t("Abonelik ve hesap işlemleri")) + '</h3><p class="lead">' + esc(t("Aboneliğinizi değiştirmek ya da iptal etmek için kasajurnali@gmail.com adresine yazabilirsiniz. “Hesabımı sil” ile Yachting Jurnal hesabınız hemen silinir ve oturumunuz kapanır.")) + '</p>' +
+      '<div class="btns" style="justify-content:flex-start"><a class="btn" href="mailto:kasajurnali@gmail.com?subject=' + encodeURIComponent("Abonelik / Subscription") + '">' + esc(t("Destek ve abonelik")) + '</a><button class="btn danger" id="hesapSilAc">' + esc(t("Hesabımı sil")) + '</button></div></div>';
     return h;
   }
   function openYKisi(eposta) {
@@ -1333,6 +1332,23 @@
     const d = $("#gDurum"); if (d) d.innerHTML = '<span class="spin"></span>' + esc(G.mesaj || t("Onay bekleniyor…"));
     G.t = setTimeout(gBekle, G.aralik * 1000);
   }
+  // account deletion (Google Play / App Store rule): the access record is deleted on the server, then the user is signed out
+  function openHesapSil() {
+    const V = (S.hes && S.hes.veri) || {};
+    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh"><h3 id="sh">' + esc(t("Hesabınız silinsin mi?")) + '</h3><div class="info">' +
+      '<p>' + esc(t("{hesap} hesabının Yachting Jurnal kaydı silinir: e-posta adresiniz, giriş bilgileriniz, paketiniz ve kalan süreniz. Bu işlem geri alınamaz; ödenmiş bir aboneliğiniz varsa kalan süresi de kaybolur.", { hesap: V.hesap || "" })) + '</p>' +
+      '<p>' + esc(t("Kasa kayıtlarınız ve fişleriniz silinmez: bu cihazda ve Google Drive’ınızdaki “Kasa Jurnali” klasöründe kalır. Onları isterseniz önce dışa aktarın, sonra kendiniz silin.")) + '</p>' +
+      '<p class="small">' + esc(t("Yasal yükümlülük gereği ödeme kayıtları saklanır; ücretsiz denemenin yeniden başlamaması için e-postanızın geri çevrilemez bir özeti 2 yıl tutulur.")) + '</p></div>' +
+      '<div class="err-t" id="hsErr"></div><div class="acts"><div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Vazgeç")) + '</button><button type="button" class="btn danger" id="hesapSilOk">' + esc(t("Hesabımı kalıcı olarak sil")) + '</button></div></div></div></div>';
+  }
+  async function hesapSil(b) {
+    b.disabled = true;
+    try {
+      await KJSenk.yonetim({ islem: "hesapSil" });
+      try { await KJSenk.cikis(); } catch (e) { }
+      closeSheet(); S.hes = null; S.tab = "list"; render(); toast(t("Hesabınız silindi ve oturumunuz kapatıldı."));
+    } catch (e) { b.disabled = false; const x = $("#hsErr"); if (x) x.textContent = e.message; }
+  }
   function openSenkOff() {
     const zor = S.senk && S.senk.zorunlu;
     $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh"><h3 id="sh">' + esc(zor ? t("Oturum kapatılsın mı?") : t("Google Drive bağlantısı kesilsin mi?")) + '</h3><div class="info"><p>' + esc(zor ? t("Bu cihazdaki kayıtlar silinmez. Yeniden oturum açtığınızda kaldığınız yerden devam edersiniz. Diğer cihazlarınız ve Google Drive’daki kopya etkilenmez.") : t("Bu cihazdaki kayıtlar silinmez; bundan sonra yalnızca bu cihazda kalır. Diğer cihazlarınız ve Google Drive’daki kopya etkilenmez.")) + '</p><p class="small">' + esc(t("Drive’daki kopyayı tamamen silmek için oturumu kapattıktan sonra Google Drive’daki “Kasa Jurnali” klasörünü silin.")) + '</p></div>' +
@@ -1477,6 +1493,8 @@
     if (t0.closest("#gVazgec")) { if (S.gbag) clearTimeout(S.gbag.t); S.gbag = null; senkPanelYenile(); return; }
     if (t0.closest("#senkNow")) { KJSenk.esitle(); return; }
     if (t0.closest("#senkOff")) { openSenkOff(); return; }
+    if (t0.closest("#hesapSilAc")) { openHesapSil(); return; }
+    if (t0.closest("#hesapSilOk")) { hesapSil(t0.closest("#hesapSilOk")); return; }
     if (t0.closest("#senkOffOk")) { const b = t0.closest("#senkOffOk"); b.disabled = true; KJSenk.cikis().then(() => { closeSheet(); S.tab = "list"; render(); toast(S.senk && S.senk.zorunlu ? t("Oturum kapatıldı.") : t("Google Drive bağlantısı kesildi.")); }).catch(e => { b.disabled = false; toast(e.message); }); return; }
     if (t0.closest("#guncelAc") || t0.closest("#guncelKur")) { openGuncelle(); return; }
     if (t0.closest("#guncelSonra")) { S.guncelSonra = true; render(); return; }
@@ -1645,8 +1663,9 @@
   const BASLIK = ".sayfabas, .ditem span, .panel h3, .sheet h3, .empty h3, .hakkinda h2, .ozellik b, .kahraman h1, .dbas b";
   // words such as "iPhone" (a capital inside) are left as they are
   // (in English, short joining words stay small: "Terms of Use and Privacy")
+  const TR_KUCUK = new Set(["ve", "veya", "ile", "ya", "ki", "de", "da", "mi", "mı", "mu", "mü"]);   // Turkish titles keep conjunctions and the question particle lowercase
   const EN_KUCUK = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the", "to", "with"]);
-  const basHarfli = m => m.replace(/(^|[\s(“"/–-])(\p{Ll})([^\s]*)/gu, (x, on, h, kalan, yer) => /\p{Lu}/u.test(kalan) || (K.lang === "en" && yer > 0 && EN_KUCUK.has(h + kalan.replace(/[^\p{L}]/gu, ""))) ? x : on + h.toLocaleUpperCase(K.lang === "en" ? "en" : "tr") + kalan);
+  const basHarfli = m => m.replace(/(^|[\s(“"/–-])(\p{Ll})([^\s]*)/gu, (x, on, h, kalan, yer) => /\p{Lu}/u.test(kalan) || (yer > 0 && (K.lang === "en" ? EN_KUCUK : TR_KUCUK).has(h + kalan.replace(/[^\p{L}]/gu, ""))) ? x : on + h.toLocaleUpperCase(K.lang === "en" ? "en" : "tr") + kalan);
   function basliklar(kok) {
     const els = kok.matches && kok.matches(BASLIK) ? [kok] : [];
     if (kok.querySelectorAll) els.push(...kok.querySelectorAll(BASLIK));
