@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="kj-token" content="">
-<meta name="kj-surum" content="2.3.0">
+<meta name="kj-surum" content="2.4.0">
 <meta name="kj-dil" content="">
 <meta name="kj-ortam" content="web">
 <link rel="manifest" href="manifest.webmanifest">
@@ -406,6 +406,30 @@ html.web body{-webkit-tap-highlight-color:transparent}
 .fiskart .ftut{font:600 14px/1.2 var(--f-mono);color:var(--ink)}
 .fiskart .ftut.in{color:var(--ok)}
 @media (max-width:520px){.fisizgara{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}}
+/* admin panel and my account */
+.ysekme{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 14px}
+.ysekme button{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:8px 16px;font:600 14px/1 var(--f-body);cursor:pointer}
+.ysekme button.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.ystatlar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.ystat{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.ystat span{font-size:12px;color:var(--muted);font-weight:600}
+.ystat b{font:700 20px/1.1 var(--f-mono);overflow-wrap:anywhere}
+.ystat.vurgu{background:var(--brass-soft)}.ystat.vurgu b{color:var(--brass)}
+.ycubuk{width:100%;height:auto;display:block}.ycubuk rect{fill:var(--accent);opacity:.85}.ycubuk text{font:11px var(--f-body);fill:var(--muted)}
+.ypaketler{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.ypaket{border:1px solid var(--line);border-radius:14px;padding:14px}
+.ypaket textarea{width:100%;font:inherit;border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--surface);color:var(--ink)}
+.ytablo{overflow-x:auto}.ytablo table{width:100%;border-collapse:collapse;font-size:14px}
+.ytablo th{text-align:left;font-size:12px;color:var(--muted);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line)}
+.ytablo td{padding:8px;border-bottom:1px solid var(--line);white-space:nowrap}.ytablo td.num{font-family:var(--f-mono);text-align:right}
+.ytablo tr.soluk td{color:var(--muted)}
+.hozellik{margin:12px 0 0;padding-left:20px;color:var(--muted)}
+.hpaketler{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px}
+.hpaket{border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:4px}
+.hpaket.on{border-color:var(--brass);box-shadow:0 0 0 2px var(--brass-soft)}
+.hpaket .fiyat{font:700 22px/1.2 var(--f-mono)}.hpaket .fiyat small{font:500 13px var(--f-body);color:var(--muted)}
+.hpaket ul{margin:6px 0 0;padding-left:18px;font-size:14px}
+@media (max-width:720px){.ystatlar{grid-template-columns:repeat(2,minmax(0,1fr))}.ypaketler{grid-template-columns:1fr}}
 /* home page */
 .ana{display:flex;flex-direction:column;gap:18px;padding-bottom:10px}
 .kahraman{position:relative;overflow:hidden;border-radius:18px;margin-top:6px;background:radial-gradient(900px 420px at 75% 0%,#1A4670 0%,var(--hull) 55%,#081A2C 100%);color:var(--on-hull);min-height:340px;box-shadow:var(--shadow)}

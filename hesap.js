@@ -104,18 +104,18 @@
     }
     return s;
   }
-  // Order matters: the first rule that matches wins ("Liman Market" is a shop, not the marina).
+  // Order matters: the first rule that matches wins ("Market" is a shop, not the marina).
   const CAT_RULES = [
     ["Yakıt", /opet|shell|\bbp\b|petrol ofisi|total ?energies|aytemiz|yakıt|yakit|mazot|motorin|benzin|akaryakıt|akaryakit|diesel|fuel|gasoline/],
     ["Temizlik & sarf", /kireç|kirec|deterjan|temizlik|rossman|çamaşır|camasir|sabun|şampuan|cleaning|detergent|soap|laundry|bleach|shampoo/],
     ["Kumanya & market", /market|grocer|migros|carrefour|a101|\bbim\b|\bşok\b/],
-    ["Marina & bağlama", /palamar|marina|bağlama|baglama|\bliman|netsel|d-marin|setur|albatros|mooring|berth|harbou?r/],
+    ["Marina & bağlama", /palamar|marina|bağlama|baglama|\bliman|d-marin|setur|mooring|berth|harbou?r/],
     ["Bakım & onarım", /marangoz|usta|tamir|onarım|onarim|servis|boya|bakım|bakim|kaynak|döşeme|tesisat|elektrikçi|tornacı|repair|service|maintenance|carpenter|mechanic|paint|welding|upholster|electrician/],
     ["Yedek parça", /yedek parça|yedek parca|filtre|rulman|pompa|impeller|conta|kayış|kayis|spare part|filter|bearing|pump|gasket/],
-    ["Ekipman & malzeme", /yat malzeme|anfora|fener|branda|minibar|kaymaz|halat|usturmaça|trendyol|hepsiburada|amazon|nalbur|chandler|fender|rope|tarpaulin|hardware/],
+    ["Ekipman & malzeme", /yat malzeme|fener|branda|minibar|kaymaz|halat|usturmaça|trendyol|hepsiburada|amazon|nalbur|chandler|fender|rope|tarpaulin|hardware/],
     ["Ulaşım", /taksi|taxi|otobüs|otobus|uçak|ucak|transfer|bilet|havalimanı|havalimani|feribot|\bbus\b|flight|airport|ticket|ferry/],
     ["Harç & belgeler", /harç|harc|noter|vergi|belge|ruhsat|transitlog|transit log|gümrük|gumruk|acente|notary|customs|permit|licen[cs]e|\bfees?\b|\bagent\b/],
-    ["Kumanya & market", /migros|macro|carrefour|a101|\bbim\b|şok|file market|pazar|fırın|firin|kuruyemiş|market|binbirçeşit|manav|kasap|ekmek|yoğurt|\bsu\b|meyve|sebze|kumanya|grocer|provision|bakery|butcher|bread|\bwater\b|fruit|vegetable/]
+    ["Kumanya & market", /migros|macro|carrefour|a101|\bbim\b|şok|file market|pazar|fırın|firin|kuruyemiş|market|manav|kasap|ekmek|yoğurt|\bsu\b|meyve|sebze|kumanya|grocer|provision|bakery|butcher|bread|\bwater\b|fruit|vegetable/]
   ];
   function guessCat(v, d) {
     const raw = (v || "") + " " + (d || "");

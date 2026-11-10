@@ -385,7 +385,7 @@
   const lisansZamani = () => S.bagli && S.lisansAcik && Date.now() - S.lisansSon > (S.lisansSon ? LISANS_ARALIK : 110000);
   async function yonetim(govde) {
     const c = await T().yonetim(govde);
-    if (c.hata) throw hata({ yetki: K.t("Bu işlem için yetkiniz yok."), eposta: K.t("E-posta adresini kontrol edin."), tarih: K.t("Tarihi kontrol edin."), gecersiz: K.t("Google hesabı doğrulanamadı; yeniden oturum açın.") }[c.hata] || K.t("Erişim sunucusu yanıt vermedi."), c.hata);
+    if (c.hata) throw hata({ yetki: K.t("Bu işlem için yetkiniz yok."), eposta: K.t("E-posta adresini kontrol edin."), tarih: K.t("Tarihi kontrol edin."), paket: K.t("Paketi kontrol edin."), fiyat: K.t("Fiyatı kontrol edin."), kayit: K.t("Hesap kaydı bulunamadı; uygulamayı yeniden açın."), islem: K.t("Bu bölüm, erişim sunucusu güncellenince açılacak."), gecersiz: K.t("Google hesabı doğrulanamadı; yeniden oturum açın.") }[c.hata] || K.t("Erişim sunucusu yanıt vermedi."), c.hata);
     return c;
   }
   async function cikis() {

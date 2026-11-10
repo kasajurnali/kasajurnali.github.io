@@ -1,12 +1,12 @@
 {
- "surum": "2.3.0",
- "tarih": "2026-11-07",
+ "surum": "2.4.0",
+ "tarih": "2026-11-10",
  "notlar": {
-  "en": "New: quiet, relaxing background music (turn it on or off with the ♪ button in the top strip). Security: updates are now verified with the developer’s digital signature. The Terms of Use and Privacy Notice are updated (rate strip, Receipts folder in Drive); you will be asked to accept them once. Also: Kasa Jurnali is now called Yachting Jurnal; Home page, time and live rates, Receipts page.",
-  "tr": "Yeni: kısık sesle çalan, dinlendirici fon müziği (üst şeritteki ♪ düğmesiyle açılıp kapanır). Güvenlik: güncellemeler artık geliştiricinin dijital imzasıyla doğrulanıyor. Kullanım Koşulları ve Gizlilik Bildirimi güncellendi (kur şeridi, Drive’daki Fişler klasörü); ilk açılışta bir kez onaylamanız istenir. Ayrıca: Kasa Jurnali’nin yeni adı Yachting Jurnal; Ana Sayfa, saat ve anlık kurlar, Fişler sayfası."
+  "en": "New My Account and Subscription page: your plan, end date, payment history and plan prices. Also a small fix in the rate strip. The example texts in the boxes now use general wording.",
+  "tr": "Yeni Hesabım ve Abonelik sayfası: paketiniz, bitiş tarihiniz, ödeme geçmişiniz ve paket fiyatları. Ayrıca kur şeridinde küçük bir düzeltme. Kutulardaki örnek metinler genel ifadelerle değiştirildi."
  },
- "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.3.0.exe",
- "boyut": 20721664,
- "sha256": "387c2c31bd5f56b2ce39e1675e5fc4f3ccfe377b380f37c0677f6bc2c31e3c45",
- "imza": "MMIF/wMReSG5a7vh+v1j3upxQiOCarI0ikkAYUBBNtGTglzjzuKfiJ9EUQpX+z2rrY4ntfM3VqKkw+HTwaxpCg=="
+ "dosya": "https://kasajurnali.github.io/guncelleme/KasaJurnali-Kurulum-2.4.0.exe",
+ "boyut": 20767744,
+ "sha256": "8a2c5bc0f00fef326b302920b2464feb8b0a2376043e3722051a4ee5e7d67377",
+ "imza": "yAIYQIsR64UzXTcja2IRlHwBN23zUVugsp2TToSRbYWtt3ZF/gEIlptbJOCFAGsrMtpYMcQxsrOSxtqqySqTAw=="
 }

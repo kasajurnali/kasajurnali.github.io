@@ -1,0 +1,14 @@
+[
+ {
+  "relation": [
+   "delegate_permission/common.handle_all_urls"
+  ],
+  "target": {
+   "namespace": "android_app",
+   "package_name": "com.yachtingjurnal.app",
+   "sha256_cert_fingerprints": [
+    "71:6E:00:CE:A1:B0:FA:D8:8A:E8:88:3E:EF:76:42:1E:C1:F7:B8:04:6C:EE:67:6A:89:75:20:D4:38:E1:22:CE"
+   ]
+  }
+ }
+]
