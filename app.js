@@ -8,9 +8,13 @@
   const TOKEN = meta("kj-token"), SURUM = meta("kj-surum"), META_DIL = meta("kj-dil");
   const WEB = meta("kj-ortam") === "web";       // the iPhone app (installed from the web page) instead of the Windows program
   const $ = s => document.querySelector(s);
-  const toNum = v => K.toNumInput(v);            // numbers typed into the boxes follow the chosen language
+  const toNum = v => K.toNumKutu(v);             // the text in a number box is in the chosen language's format (a rate "1,085" is 1.085, "1.085" is 1085)
+  // the book's currency: chosen once; amounts are never converted, so it is locked while the book has entries
+  const paraKilitli = () => S.items.length > 0 && !K.paraUyumsuz(S.items, S.set).length;   // unlocked only to repair a mismatch
+  const paraSecHTML = id => { const kilit = paraKilitli(), pb = K.paraKodu(); return '<div class="field"><label for="' + id + '">' + esc(t("Defter para birimi")) + '</label><select id="' + id + '"' + (kilit ? " disabled" : "") + '>' + K.PARALAR.map(c => '<option value="' + c + '"' + (c === pb ? " selected" : "") + '>' + esc(c + " · " + K.curName(c)) + '</option>').join("") + '</select><span class="help">' + esc(kilit ? t("Defterde kayıt var: para birimi değiştirilemez, çünkü tutarlar çevrilmez. Başka para biriminde defter için yeni tekne açın.") : t("Bütün tutarlar bu para biriminde tutulur. İlk kayıttan sonra değiştirilemez.")) + '</span></div>'; };
+  const paraOku = id => { const el = $("#" + id); return el && !el.disabled && K.CUR[el.value] && !paraKilitli() ? el.value : (S.set.para || "TRY"); };
   const defaultSet = () => ({ opening: null, openingDate: null, name: "", preparedBy: "", approvedBy: "", lowLimit: 10000, rates: {}, closed: [], openedThrough: null, lang: null, kabul: null });
-  const S = { items: [], set: defaultSet(), setBase: {}, silinenler: {}, senk: null, gbag: null, guncel: null, rev: -1, period: null, q: "", cat: "", tab: "ana", imp: null, mode: "loading", saving: 0, lastSaved: null, saveErr: null, offline: false, klasor: "", dosya: "", ph: null, editing: null, catTouched: false, notice: "", first: false, terms: null };
+  const S = { items: [], set: defaultSet(), setBase: {}, silinenler: {}, silinenKayitlar: {}, senk: null, gbag: null, guncel: null, rev: -1, period: null, q: "", cat: "", tab: "ana", imp: null, mode: "loading", saving: 0, lastSaved: null, saveErr: null, offline: false, klasor: "", dosya: "", ph: null, editing: null, catTouched: false, notice: "", first: false, terms: null };
 
   const kasaFor = p => K.kasaFor(S.items, S.set, p);
   const runningMap = () => K.runningMap(S.items, S.set);
@@ -23,6 +27,25 @@
   const clone = o => JSON.parse(JSON.stringify(o));
   const hm = d => d ? pad(d.getHours()) + ":" + pad(d.getMinutes()) : "";
   const curBalance = () => kasaFor("all").kalan;
+  /* ---------------- accounts and cards (rules in hesap.js) ---------------- */
+  const TUR_AD = () => ({ nakit: t("Nakit kasa"), banka: t("Banka hesabı"), kart: t("Kredi kartı"), avans: t("Personel avansı"), diger: t("Diğer ödeme kaynağı") });
+  const VARS_AD = { nakit: "Nakit kasa", kart: "Kredi kartı", banka: "Banka hesabı" };
+  const hesapListe = () => K.hesaplar(S.set);
+  const hesapAdi = h => (VARS_AD[h.id] && h.ad === VARS_AD[h.id] ? t(h.ad) : h.ad) + (h.son4 ? " ··" + h.son4 : "");
+  const hesapAd = id => { const h = K.hesapBul(S.set, id); return h ? hesapAdi(h) : id === "kart" ? t("Kredi kartı") : id === "banka" ? t("Banka hesabı") : t("Nakit kasa"); };
+  const nakitMi = id => K.hesapTur(S.set, id) === "nakit";
+  const ozetFor = p => K.ozetFor(S.items, S.set, p);
+  // the accounts offered in a form: active ones, plus the one the entry already uses
+  function hesapSecenek(secili, haric) {
+    const l = hesapListe().filter(h => (h.durum === "aktif" || h.id === secili) && h.id !== haric);
+    const gr = {}; l.forEach(h => (gr[h.tur] = gr[h.tur] || []).push(h));
+    return K.HESAP_TURLERI.filter(x => gr[x]).map(x => '<optgroup label="' + esc(TUR_AD()[x]) + '">' + gr[x].map(h => '<option value="' + esc(h.id) + '"' + (h.id === secili ? " selected" : "") + '>' + esc(hesapAdi(h) + (h.sahip ? " · " + h.sahip : "")) + '</option>').join("") + '</optgroup>').join("");
+  }
+  function sonHesap(type) {
+    const s = S.items.filter(e => (e.type || "out") === type).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+    const id = s[0] ? K.hesapOf(s[0]) : "nakit", h = K.hesapBul(S.set, id);
+    return h && h.durum === "aktif" ? id : "nakit";
+  }
   const modalOpen = () => !!$("#sheetHost .scrim");
   const mustAccept = () => !!(S.terms && S.terms.mode === "accept");
 
@@ -33,7 +56,8 @@
   };
 
   /* ---------------- language ---------------- */
-  const dilSec = () => (S.set.lang === "tr" || S.set.lang === "en") ? S.set.lang : (META_DIL === "tr" || META_DIL === "en") ? META_DIL : (/^tr/i.test(navigator.language || "") ? "tr" : "en");
+  // the language chosen on this device, else the program's (Windows) language, else the browser's; English when none of ours
+  const dilSec = () => K.dilGecerli(S.set.lang) || K.dilGecerli(META_DIL) || [navigator.language, ...(navigator.languages || [])].map(K.dilBul).find(Boolean) || "en";
   function applyLang() {
     const l = K.setLang(dilSec());
     document.documentElement.lang = l;
@@ -41,30 +65,50 @@
     document.querySelectorAll("[data-t-title]").forEach(el => { el.title = t(el.dataset.tTitle); });
     document.querySelectorAll("[data-t-aria]").forEach(el => { el.setAttribute("aria-label", t(el.dataset.tAria)); });
     document.querySelectorAll(".langsw [data-lang]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.lang === l)));
+    document.querySelectorAll(".langsw select").forEach(s => { s.value = l; });
     renderFoot();
     if (S.kur) kurCiz();
     muzikDugme();
   }
   async function setLanguage(l) {
-    if ((l !== "tr" && l !== "en") || (l === K.lang && S.set.lang === l)) return;
+    if (!K.dilGecerli(l) || (l === K.lang && S.set.lang === l)) return;
     const prev = S.set.lang;
     S.set.lang = l; applyLang(); render(); if (S.terms) renderTerms();
     if (S.mode !== "live") return;
     try { await persistSettings(); }
     catch (e) { S.set.lang = prev; applyLang(); render(); if (S.terms) renderTerms(); toast(e.message); }
   }
-  const langSwitchHTML = () => '<span class="langsw" role="group" aria-label="Dil / Language"><button type="button" data-lang="tr" aria-pressed="' + (K.lang === "tr") + '">TR</button><button type="button" data-lang="en" aria-pressed="' + (K.lang === "en") + '">EN</button></span>';
+  // compact language menu (top bar, legal texts): "TR", "EN", … with the language's own name as the tooltip
+  const langSwitchHTML = () => '<span class="langsw"><select name="lang" aria-label="Dil / Language">' + K.DILLER.map(d => '<option value="' + d + '" title="' + esc(K.DIL_ADI[d]) + '"' + (d === K.lang ? " selected" : "") + '>' + d.toUpperCase() + '</option>').join("") + '</select></span>';
   function renderFoot() {
     const fp = $("#footPath"); if (fp) fp.textContent = WEB ? t("Kayıtlar bu telefonda saklanır.") : S.klasor ? t("Kayıtlar: {yol}", { yol: S.klasor }) : t("Kayıtlar bu bilgisayarda saklanır. İnternet gerekmez.");
     const fk = $("#footKeys"); if (fk && WEB) fk.hidden = true; else if (fk) fk.innerHTML = esc(t("Kısayollar:")) + ' <kbd>Ctrl</kbd>+<kbd>S</kbd> ' + esc(t("kaydet")) + ' · <kbd>N</kbd> ' + esc(t("yeni fiş")) + ' · <kbd>' + esc(t("G")) + '</kbd> ' + esc(t("gelen para")) + ' · <kbd>Esc</kbd> ' + esc(t("kapat"));
   }
 
   /* ---------------- number boxes: separators appear while typing (15000 → 15.000) ---------------- */
-  const SEP = () => K.lang === "en" ? { g: ",", d: "." } : { g: ".", d: "," };
+  const SEP = () => K.SEP;                       // from hesap.js: "," / "." in English, "." / "," (French: space / ",") in the others
   const group = (ip, g) => ip.replace(/\B(?=(\d{3})+(?!\d))/g, g);
-  function fmtNumBox(el) {
-    const { g, d } = SEP(), max = +(el.dataset.dec || 2);
-    const v = el.value, caret = el.selectionStart == null ? v.length : el.selectionStart;
+  // The other language's decimal mark ("." in a box that uses ",", "," in the English one) typed at the end of a box that has no
+  // decimal mark yet is taken as the decimal mark: "12.50" is 12,50, not 1.250 (a 100x error). In a box with at most 2 decimals
+  // (money, litres), a third digit after 1-3 digits ("1.250") means it was a thousands separator after all and the digits are
+  // grouped. A box with more decimals (the rate, 4) never does that: "1.085" is 1,085 and "38.1234" is 38,1234. A leading
+  // zero ("0.250") is never thousands. Pasted text follows the same rules in K.toNumInput(text, max).
+  function fmtNumBox(el, ev) {
+    const { g, d } = SEP(), max = +(el.dataset.dec || 2), alt = d === "," ? "." : ",";
+    let v = el.value, caret = el.selectionStart == null ? v.length : el.selectionStart;
+    const yazilan = ev && typeof ev.data === "string" ? ev.data : "";
+    if (yazilan === d || !v.includes(d)) el._nokta = false;
+    if (max > 0 && ev && caret === v.length) {
+      if (yazilan === alt && !v.slice(0, -1).includes(d)) {
+        // the alt mark just typed at the end: it becomes the decimal mark (earlier ones were thousands separators)
+        const bas = v.slice(0, -1), neg = /^\s*-/.test(bas) ? "-" : "";
+        const grp = bas.split(g).length > 1 && bas.replace(/^\s*-/, "").trim().split(g).every((x, i) => i ? /^\d{3}$/.test(x) : /^[1-9]\d{0,2}$/.test(x));   // "1.250" already typed with its thousands mark: "1.250.000"
+        v = neg + (bas.replace(/[^0-9]/g, "") || "0") + d; el._nokta = grp ? "g" : true; el.value = v; caret = v.length;
+      } else if (el._nokta && v.includes(d)) {
+        const i = v.indexOf(d), fp = v.slice(i + 1).replace(/[^0-9]/g, "");
+        if (fp.length === 3 && yazilan && /\d/.test(yazilan) && max <= 2 && (el._nokta === "g" || /^[1-9]\d{0,2}$/.test(v.slice(0, i).replace(/[^0-9]/g, "")))) { v = v.slice(0, i).replace(/[^0-9-]/g, "") + fp; el._nokta = false; caret = v.length; }
+      }
+    }
     let before = 0;                                  // digits and decimal mark typed before the caret
     for (let i = 0; i < caret && i < v.length; i++) if (/\d/.test(v[i]) || (v[i] === d && max > 0)) before++;
     const neg = el.dataset.neg === "1" && /^\s*-/.test(v);
@@ -88,7 +132,7 @@
 
   /* ---------------- local program connection ---------------- */
   // ham: a request to the program (or the iPhone app's storage) with the window's key; returns the raw answer
-  const ham = (path, init = {}) => fetch(path, Object.assign({}, init, { headers: Object.assign({ "X-KJ-Token": TOKEN, "X-KJ-Dil": K.lang }, init.headers || {}) }));
+  const ham = (path, init = {}) => fetch(path, Object.assign({}, init, { headers: Object.assign({ "X-KJ-Token": TOKEN, "X-KJ-Dil": K.lang, "X-KJ-Tekne": S.tekne || "ana" }, init.headers || {}) }));
   async function api(path, opt = {}) {
     const o = Object.assign({}, opt);
     if (opt.json !== undefined) { o.body = JSON.stringify(opt.json); o.headers = Object.assign({ "Content-Type": "application/json" }, opt.headers || {}); delete o.json; }
@@ -118,7 +162,9 @@
     S.set._zaman = Object.assign({}, S.set._zaman, f.zaman); S.setBase = clone(S.set);
     return r;
   }
-  const persistAll = () => op({ islem: "tumunu", defter: { ayarlar: S.set, kayitlar: S.items, silinenler: S.silinenler }, taban: S.rev });
+  const persistAll = () => op({ islem: "tumunu", defter: { ayarlar: S.set, kayitlar: S.items, silinenler: S.silinenler, silinenKayitlar: S.silinenKayitlar }, taban: S.rev });
+  // who made a change, for the change history (gecmis.js): this device and, when synchronising, its Google account
+  const kimBu = () => (WEB ? "iPhone" : "PC") + (S.senk && S.senk.hesap ? " · " + S.senk.hesap : "");
 
   function toast(msg, actions) {
     const h = $("#toastHost");
@@ -144,7 +190,7 @@
     if (!S.period) S.period = curYM();
     const ms = monthRange();
     const sel = $("#periodSel");
-    sel.innerHTML = ms.map(m => '<option value="' + m + '">' + esc(monthLabel(m) + (isClosed(m) ? " · " + t("kapandı") : "")) + '</option>').join("") + '<option value="all">' + esc(t("Tüm dönemler")) + '</option>';
+    sel.innerHTML = ms.map(m => '<option value="' + esc(m) + '">' + esc(monthLabel(m) + (isClosed(m) ? " · " + t("kapandı") : "")) + '</option>').join("") + '<option value="all">' + esc(t("Tüm dönemler")) + '</option>';
     if (S.period !== "all" && !ms.includes(S.period)) S.period = ms[0];
     sel.value = S.period;
     const ix = ms.indexOf(S.period);
@@ -156,26 +202,28 @@
     $("#exportBtn").hidden = S.mode !== "live";
   }
   function paySplitLine(p) {
-    const sp = K.paySplit(p === "all" ? S.items : S.items.filter(e => (e.date || "").slice(0, 7) === p));
-    if (!sp.nakit && !sp.kart) return "";
-    return '<span class="from">' + esc(t("Nakit") + " " + tl(sp.nakit) + " · " + t("Kart") + " " + tl(sp.kart) + (sp.none ? " · " + t("Belirtilmemiş") + " " + tl(sp.none) : "")) + '</span>';
+    const sp = K.paySplit(p === "all" ? S.items : S.items.filter(e => (e.date || "").slice(0, 7) === p), S.set);
+    if (!sp.kart && !sp.none) return "";
+    return '<span class="from">' + esc(t("Nakit") + " " + tl(sp.nakit) + " · " + t("Kart") + " " + tl(sp.kart) + (sp.none ? " · " + t("Banka ve diğer") + " " + tl(sp.none) : "")) + '</span>';
   }
   function renderKasa() {
     $("#bookName").textContent = S.set.name || t("Günlük harcama ve kasa takibi");
     document.title = S.set.name ? "Yachting Jurnal · " + S.set.name : "Yachting Jurnal";
-    const k = kasaFor(S.period || curYM());
+    const k = kasaFor(S.period || curYM()), oz = ozetFor(S.period || curYM());
     const first = S.period === "all";
     const isLatest = S.period === "all" || S.period >= (monthRange()[0] || curYM());
     const low = isLatest && k.kalan >= 0 && +S.set.lowLimit > 0 && k.kalan < +S.set.lowLimit;
     $("#kasa").innerHTML =
       '<div class="kc"><span class="lbl">' + esc(first ? t("Başlangıç kasası") : t("Devir kasa")) + '</span><span class="v' + (k.devir < 0 ? " neg" : "") + '">' + tl(k.devir) + '</span>' + (!first && S.set.openingDate && S.period > S.set.openingDate.slice(0, 7) ? '<span class="from">' + esc(t("{ay} kalanı", { ay: monthLabel(addMonth(S.period, -1)) })) + '</span>' : "") + '</div>' +
-      '<div class="kc in"><span class="lbl">' + esc(t("Gelen para")) + '</span><span class="v">' + tl(k.in) + '</span></div>' +
-      '<div class="kc"><span class="lbl">' + esc(t("Toplam harcama")) + '</span><span class="v">' + tl(k.out) + '</span>' + paySplitLine(S.period || curYM()) + '</div>' +
+      '<div class="kc in"><span class="lbl">' + esc(t("Gelen para")) + '</span><span class="v">' + tl(oz.gelir) + '</span></div>' +
+      '<div class="kc"><span class="lbl">' + esc(t("Toplam harcama")) + '</span><span class="v">' + tl(oz.gider) + '</span>' + paySplitLine(S.period || curYM()) + '</div>' +
       '<div class="kc end' + (k.kalan < 0 ? " neg" : "") + (low ? " low" : "") + '"><span class="lbl">' + esc(k.kalan < 0 ? t("Kasa açığı") : t("Kalan kasa")) + '</span><span class="v">' + tl(k.kalan) + '</span>' + (k.kalan < 0 ? '<span class="from">' + esc(t("Gelen para önce açığı kapatır")) + '</span>' : low ? '<span class="from">' + esc(t("Uyarı sınırının altında")) + '</span>' : "") + '</div>';
-    $("#formula").textContent = S.set.opening == null && S.mode === "live" && S.items.length ? t("Başlangıç kasası girilmedi; “Ayarlar” bölümünden ekleyin.") : t("Kalan kasa = Devir + Gelen para − Harcama. Kasa biterse eksiye düşer; gelen para önce açığı kapatır.");
+    $("#formula").textContent = S.set.opening == null && S.mode === "live" && S.items.length ? t("Başlangıç kasası girilmedi; “Ayarlar” bölümünden ekleyin.") : t("Kalan kasa = Devir {devir} + kasaya giren {gir} − kasadan çıkan {cik}. Kart, banka ve avans harcamaları nakit kasayı değiştirmez.", { devir: tl(k.devir), gir: tl(k.in), cik: tl(k.out) });
   }
   function render() {
+    K.setPara(S.set && S.set.para);
     if (S.mode === "live") { buildPeriodSel(); renderKasa(); }
+    if (window.KJ_FILO) KJ_FILO.baslik();   // boat picker (tekne.js)
     if (S.tab === "io") S.tab = "ayar";
     document.body.classList.toggle("sade", !(S.tab === "list" || S.tab === "sum" || S.tab === "fisler"));
     const sb = $("#sayfaBas"); if (sb) sb.textContent = SAYFA_ADI()[S.tab] || "";
@@ -187,7 +235,7 @@
     else if (S.mode === "loading") h = '<div class="loading">' + esc(t("Jurnal açılıyor…")) + '</div>';
     else if (giris) h = girisGerekli() ? girisHTML() : erisimHTML();
     else if (S.mode === "live" && window.KJSenk && S._senkKur && !S.senk && !S.terms) h = '<div class="loading">' + esc(t("Jurnal açılıyor…")) + '</div>';
-    else h = banners() + (S.tab === "ana" ? viewAna() : S.tab === "hesabim" ? viewHesabim() : S.tab === "fisler" ? viewFisler() : S.tab === "list" ? viewList() : S.tab === "sum" ? viewSum() : S.tab === "rapor" ? viewRapor() : S.tab === "yonetim" ? viewYonetim() : viewIO(S.tab));
+    else h = banners() + (S.tab === "ana" ? viewAna() : S.tab === "hesabim" ? viewHesabim() : S.tab === "fisler" ? viewFisler() : S.tab === "list" ? viewList() : S.tab === "sum" ? viewSum() : S.tab === "rapor" ? viewRapor() : S.tab === "yonetim" ? viewYonetim() : S.tab === "hesaplar" ? viewHesaplar() : (S.tab === "tekneler" || S.tab === "sirket") && window.KJ_FILO ? KJ_FILO.view(S.tab) : viewIO(S.tab));
     $("#main").innerHTML = h;
     if (S.tab === "list" && S._focusQ) { const q = $("#q"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } S._focusQ = false; }
     if (S.tab === "excel" || S.tab === "tum") syncMapSelects();
@@ -198,9 +246,13 @@
   function banners() {
     let h = "";
     if (WEB && S.yeniSurum) h += '<div class="note"><span><b>' + esc(t("Yeni sürüm hazır")) + '</b>' + esc(t("Yachting Jurnal’in yeni sürümü indirildi. Kayıtlarınız olduğu gibi kalır.")) + '</span><span class="btns"><button class="btn sm pri" id="swGuncelle">' + esc(t("Şimdi güncelle")) + '</button></span></div>';
-    if (!WEB && S.guncel && S.guncel.yeni && !S.guncelSonra) h += '<div class="note"><span><b>' + esc(t("Yeni sürüm: Yachting Jurnal {surum}", { surum: S.guncel.yeni.surum })) + '</b>' + esc((S.guncel.yeni.notlar && (S.guncel.yeni.notlar[K.lang] || S.guncel.yeni.notlar.tr)) || t("Kayıtlarınıza dokunulmadan güncellenir.")) + '</span><span class="btns"><button class="btn sm" id="guncelSonra">' + esc(t("Sonra")) + '</button><button class="btn sm pri" id="guncelAc">' + esc(t("Güncelle")) + '</button></span></div>';
-    const kg = kalanGun();
+    if (!WEB && S.guncel && S.guncel.yeni && !S.guncelSonra) h += '<div class="note"><span><b>' + esc(t("Yeni sürüm: Yachting Jurnal {surum}", { surum: S.guncel.yeni.surum })) + '</b>' + esc((S.guncel.yeni.notlar && (S.guncel.yeni.notlar[K.lang] || (K.lang !== "tr" && S.guncel.yeni.notlar.en) || S.guncel.yeni.notlar.tr)) || t("Kayıtlarınıza dokunulmadan güncellenir.")) + '</span><span class="btns"><button class="btn sm" id="guncelSonra">' + esc(t("Sonra")) + '</button><button class="btn sm pri" id="guncelAc">' + esc(t("Güncelle")) + '</button></span></div>';
+    const os = odemeSorunu();
+    if (os && S.tab !== "hesabim") h += '<div class="note err"><span><b>' + esc(t("Ödeme alınamadı, kartınızı güncelleyin")) + '</b>' + esc(t("Aboneliğiniz {tarih} tarihine kadar açık kalır. Kartınızı “Aboneliği yönet” bölümünden güncelleyebilirsiniz.", { tarih: dmy(os.ekSureSon) })) + '</span><span class="btns"><button class="btn sm pri" data-menu="hesabim">' + esc(t("Aboneliği yönet")) + '</button></span></div>';
+    const kg = os ? null : kalanGun();
     if (kg != null && kg <= 7) h += '<div class="note warn"><span><b>' + esc(kg <= 0 ? (S.senk.lisans.deneme ? t("Deneme sürenizin son günü") : t("Kullanım sürenizin son günü")) : S.senk.lisans.deneme ? t("Deneme sürenizin bitmesine {n} gün kaldı", { n: kg }) : t("Kullanım sürenizin bitmesine {n} gün kaldı", { n: kg })) + '</b>' + esc(t("Son gün: {tarih}. Sonra da kullanmak için Yachting Jurnal ile iletişime geçin.", { tarih: dmy(S.senk.lisans.bitis) })) + '</span></div>';
+    const pu = K.paraUyumsuz(S.items, S.set);
+    if (pu.length) h += '<div class="note err"><span><b>' + esc(t("Para birimi uyuşmazlığı")) + '</b>' + esc(t("{n} kayıt {eski} defterindeyken girilmiş; defterin para birimi şimdi {yeni}. Tutarlar çevrilmez: bu kayıtlar toplamlara katılmıyor. Defter para birimini Ayarlar’dan {eski} yapın ya da kayıtları düzeltin.", { n: pu.length, eski: K.kayitParasi(pu[0]), yeni: K.paraKodu() })) + '</span></div>';
     if (S.notice) h += '<div class="note warn"><span><b>' + esc(t("Bilgi")) + '</b>' + esc(S.notice) + '</span><span class="btns"><button class="btn sm" data-dismiss>' + esc(t("Tamam")) + '</button></span></div>';
     if (S.saveErr) h += '<div class="note err"><span><b>' + esc(t("Son değişiklik kaydedilemedi")) + '</b>' + esc(S.saveErr) + '</span><span class="btns"><button class="btn sm pri" id="retrySave">' + esc(t("Tekrar kaydet")) + '</button></span></div>';
     if (S.tab === "list" && S.items.length) {
@@ -215,11 +267,13 @@
   function viewList() {
     if (!S.items.length) return welcome();
     const q = lower(S.q);
-    const flt = i => !S.cat || (S.cat === "__in" ? isIn(i) : S.cat === "__nakit" ? (!isIn(i) && i.pay === "nakit") : S.cat === "__kart" ? (!isIn(i) && i.pay === "kart") : S.cat === "__foto" ? !!i.photo : S.cat === "__doviz" ? (i.cur && i.cur !== "TRY") : i.cat === S.cat);
+    const giderMi = i => K.isOut(i) || K.isIade(i);
+    const flt = i => !S.cat || (S.cat === "__in" ? isIn(i) : S.cat === "__tr" ? K.isTr(i) : S.cat === "__iade" ? K.isIade(i) : S.cat === "__nakit" ? (giderMi(i) && nakitMi(K.hesapOf(i))) : S.cat === "__kart" ? (giderMi(i) && K.hesapTur(S.set, K.hesapOf(i)) === "kart") : S.cat === "__foto" ? !!i.photo : S.cat === "__doviz" ? (i.cur && i.cur !== "TRY") : S.cat.startsWith("__h:") ? (K.hesapOf(i) === S.cat.slice(4) || i.hedef === S.cat.slice(4)) : i.cat === S.cat);
     const its = periodItems().filter(i => flt(i) && (!q || lower([i.desc, i.cat, K.catLabel(i.cat), i.vendor, i.note, i.amount, K.amountNote(i)].join(" ")).includes(q))).sort(K.cmpEntry);
     const run = runningMap();
     let h = '<div class="filters"><input id="q" type="search" placeholder="' + esc(t("Ara: şirket, açıklama, not, tutar…")) + '" value="' + esc(S.q) + '" aria-label="' + esc(t("Fişlerde ara")) + '"><select id="catSel" class="pill" aria-label="' + esc(t("Süzgeç")) + '"><option value="">' + esc(t("Tüm kayıtlar")) + '</option>' +
-      [["__in", t("Yalnız gelen para")], ["__nakit", t("Nakit harcamalar")], ["__kart", t("Kartla harcamalar")], ["__doviz", t("Dövizli kayıtlar")], ["__foto", t("Fotoğraflı fişler")]].map(([v, l]) => '<option value="' + v + '"' + (S.cat === v ? " selected" : "") + '>' + esc(l) + '</option>').join("") +
+      [["__in", t("Yalnız gelen para")], ["__nakit", t("Nakit harcamalar")], ["__kart", t("Kartla harcamalar")], ["__tr", t("Transferler")], ["__iade", t("İadeler")], ["__doviz", t("Dövizli kayıtlar")], ["__foto", t("Fotoğraflı fişler")]].map(([v, l]) => '<option value="' + v + '"' + (S.cat === v ? " selected" : "") + '>' + esc(l) + '</option>').join("") +
+      '<optgroup label="' + esc(t("Hesap / kart")) + '">' + hesapListe().map(h => '<option value="__h:' + esc(h.id) + '"' + (S.cat === "__h:" + h.id ? " selected" : "") + '>' + esc(hesapAdi(h) + (h.sahip ? " · " + h.sahip : "")) + '</option>').join("") + '</optgroup>' +
       '<optgroup label="' + esc(t("Kategori")) + '">' + allCats().map(c => '<option value="' + esc(c) + '"' + (c === S.cat ? " selected" : "") + '>' + esc(K.catLabel(c)) + '</option>').join("") + '</optgroup></select></div>';
     const filtered = !!(q || S.cat);
     if (!its.length) {
@@ -233,17 +287,21 @@
       h += '<section class="month"><div class="mhead"><h2>' + esc(k === "0000-00" ? t("Tarihsiz") : monthLabel(k)) + (isClosed(k) ? '<span class="mtag">' + esc(t("Kapandı")) + '</span>' : "") + '</h2><div class="sub"><span>' + esc(t("Harcama {tutar}", { tutar: tl(s.out) })) + '</span>' + (s.in ? '<span class="g">' + esc(t("Gelen {tutar}", { tutar: tl(s.in) })) + '</span>' : "") + '</div></div><ul class="rows">';
       if (!filtered && k !== "0000-00") { const kk = kasaFor(k); h += '<li><div class="row devir"><span class="d"><b>01</b>' + esc(shortMon(k)) + '</span><span class="t"><span class="ds">' + esc(t("Devir · önceki dönemden kalan kasa")) + '</span></span><span class="amt' + (kk.devir < 0 ? " neg" : "") + '">' + tl(kk.devir) + '</span></div></li>'; }
       g.forEach(i => {
-        const inn = isIn(i);
+        const inn = isIn(i), tr = K.isTr(i), iade = K.isIade(i), hid = K.hesapOf(i);
         const meta = [
-          inn ? '<span class="chip in">' + esc(t("Gelen para")) + '</span>' : i.cat ? '<span class="chip">' + esc(K.catLabel(i.cat)) + '</span>' : "",
-          i.pay ? '<span class="chip pay">' + esc(K.payName(i.pay)) + '</span>' : "",
-          i.cur && i.cur !== "TRY" && +i.fxAmount > 0 ? '<span class="chip cur">' + esc(fx(i.fxAmount, i.cur) + " · " + t("kur") + " " + K.dec(i.fxRate)) + '</span>' : "",
+          K.tutarGecerli(i) ? "" : '<span class="chip">' + esc(t("Geçersiz tutar")) + '</span>',
+          K.tutarGecerli(i) && !K.hesabaGirer(i, S.set) ? '<span class="chip">' + esc(t("Para birimi uyuşmazlığı")) + '</span>' : "",
+          inn ? '<span class="chip in">' + esc(t("Gelen para")) + '</span>' : tr ? '<span class="chip in">' + esc(t("Transfer")) + '</span>' : iade ? '<span class="chip in">' + esc(t("İade")) + '</span>' : "",
+          !inn && !tr && i.cat ? '<span class="chip">' + esc(K.catLabel(i.cat)) + '</span>' : "",
+          '<span class="chip pay">' + esc(tr ? hesapAd(hid) + " → " + hesapAd(i.hedef) : hesapAd(hid)) + '</span>',
+          inn && i.pay ? '<span class="chip pay">' + esc(K.payName(i.pay)) + '</span>' : "",
+          i.cur && i.cur !== K.paraKodu() && +i.fxAmount > 0 ? '<span class="chip cur">' + esc(fx(i.fxAmount, i.cur) + " · " + t("kur") + " " + K.kurStr(i.fxRate)) + '</span>' : "",
           +i.lt > 0 ? '<span class="chip cur">' + ICON.fuel + esc(K.ltStr(i.lt) + " · " + K.perL(i.amount / i.lt)) + '</span>' : "",
           i.photo ? '<span class="chip cam">' + ICON.cam + esc(t("Fiş")) + '</span>' : "",
           i.note ? '<span>' + esc(i.note) + '</span>' : ""
         ].filter(Boolean).join("");
         const title = i.vendor ? esc(i.vendor) + (i.desc ? ' <small>· ' + esc(i.desc) + '</small>' : "") : esc(i.desc || "—");
-        h += '<li><button class="row' + (inn ? " in" : "") + '" data-edit="' + esc(i.id) + '"><span class="d"><b>' + ((i.date || "").slice(8, 10) || "–") + '</b>' + (k !== "0000-00" ? esc(shortMon(k)) : "") + '</span><span class="t"><span class="ds">' + title + '</span>' + (meta ? '<span class="mt">' + meta + '</span>' : "") + '</span><span class="amtw"><span class="amt">' + (inn ? "+ " : "") + tl(+i.amount || 0) + '</span><span class="bal' + (run[i.id] < 0 ? " neg" : "") + '">' + esc(t("Kasa") + " " + tl(run[i.id])) + '</span></span></button></li>';
+        h += '<li><button class="row' + (inn || iade ? " in" : "") + '" data-edit="' + esc(i.id) + '"><span class="d"><b>' + ((i.date || "").slice(8, 10) || "–") + '</b>' + (k !== "0000-00" ? esc(shortMon(k)) : "") + '</span><span class="t"><span class="ds">' + title + '</span>' + (meta ? '<span class="mt">' + meta + '</span>' : "") + '</span><span class="amtw"><span class="amt">' + (inn || iade ? "+ " : tr ? "⇄ " : "") + (K.hesabaGirer(i, S.set) || !K.tutarGecerli(i) ? tl(+i.amount || 0) : fx(+i.amount || 0, K.kayitParasi(i))) + '</span><span class="bal' + (run[i.id] < 0 && nakitMi(hid) ? " neg" : "") + '">' + esc(nakitMi(hid) ? t("Kasa") + " " + tl(run[i.id]) : hesapAd(hid)) + '</span></span></button></li>';
       });
       h += '</ul>';
       if (!filtered && isClosed(k)) h += stampHTML(k, kasaFor(k).kalan);
@@ -279,8 +337,8 @@
   function kaptan() {
     const ad = String(S.set.preparedBy || "").split(/\s+/).filter(w => w && !/^(kpt|kap|kapt|kaptan|capt|captain|cpt)\.?$/i.test(w))[0] || "";
     if (!ad) return "";
-    const Ad = ad[0].toLocaleUpperCase(K.lang === "en" ? "en" : "tr") + ad.slice(1);
-    return K.lang === "en" ? "Captain " + Ad : Ad + " Kaptan";
+    const Ad = ad[0].toLocaleUpperCase(K.loc) + ad.slice(1);
+    return t("{ad} Kaptan", { ad: Ad });
   }
   // a 45–50 m motor yacht in profile: long raked hull, four stepped decks with tinted glass, radar mast with domes
   function anaYat() {
@@ -324,7 +382,7 @@
   }
   // the boat's name painted on the bow of the yacht (from the boat details), small but readable
   function teknedeAd() {
-    const ad = String(S.set.name || "").trim().toLocaleUpperCase(K.lang === "en" ? "en" : "tr");
+    const ad = String(S.set.name || "").trim().toLocaleUpperCase(K.loc);
     if (!ad) return "";
     const uzun = ad.length * 3.3 > 52;
     return '<text class="tad" x="64" y="2.6" text-anchor="end"' + (uzun ? ' textLength="52" lengthAdjust="spacingAndGlyphs"' : "") + '>' + esc(ad) + '</text>';
@@ -365,48 +423,48 @@
 
   /* ---------------- Özet ---------------- */
   function viewSum() {
-    const pits = periodItems(), outs = pits.filter(e => !isIn(e));
+    const pits = periodItems(), outs = pits.filter(e => K.isOut(e) || K.isIade(e));
     const tot = K.sums(pits).out;
     let h = '';
     if (!outs.length) h += '<div class="empty" style="margin-bottom:14px"><h3>' + esc(S.period === "all" ? t("Harcama yok") : t("{ay} için harcama yok", { ay: monthLabel(S.period) })) + '</h3><p>' + esc(t("Yukarıdan başka bir dönem seçin.")) + '</p></div>';
     else {
       const rows = K.catSplit(outs), max = rows[0][1] || 1;
       h += '<div class="grid2p"><div class="panel"><h3>' + esc(t("Kategoriye göre harcama")) + '</h3>' + rows.map(([k, v]) => '<div class="cbar"><span class="n">' + esc(K.catLabel(k)) + '</span><span class="v">' + tl(v) + ' <span class="pc">' + K.pct(tot ? Math.round(v / tot * 100) : 0) + '</span></span><div class="track"><div class="fill" style="width:' + (v / max * 100).toFixed(1) + '%"></div></div></div>').join("") + '</div>';
-      const sp = K.paySplit(outs), pt = sp.nakit + sp.kart + sp.none;
-      const prow = [[t("Nakit"), sp.nakit, "var(--ok)"], [t("Kart"), sp.kart, "var(--accent)"], [t("Belirtilmemiş"), sp.none, "var(--muted)"]].filter(r => r[1] > 0);
+      const oz = ozetFor(S.period || "all"), renk = { nakit: "var(--ok)", kart: "var(--accent)", banka: "var(--brass)", avans: "var(--muted)", diger: "var(--muted)" };
+      const prow = Object.entries(oz.hesap).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(([id, v]) => [hesapAd(id), v, renk[K.hesapTur(S.set, id)] || "var(--muted)"]), pt = prow.reduce((a, x) => a + x[1], 0);
       const pm = Math.max(...prow.map(r => r[1]), 1);
-      const bv = {}; outs.forEach(i => { const k = i.vendor || i.desc || "—"; bv[k] = r2((bv[k] || 0) + (+i.amount || 0)); });
+      const bv = {}; outs.forEach(i => { const k = i.vendor || i.desc || "—"; bv[k] = r2((bv[k] || 0) + (+i.amount || 0) * (K.isIade(i) ? -1 : 1)); });
       const vr = Object.entries(bv).sort((a, b) => b[1] - a[1]).slice(0, 6), vm = vr.length ? vr[0][1] : 1;
-      h += '<div><div class="panel"><h3>' + esc(t("Ödeme şekline göre")) + '</h3>' + prow.map(([n, v, c]) => '<div class="cbar"><span class="n">' + esc(n) + '</span><span class="v">' + tl(v) + ' <span class="pc">' + K.pct(pt ? Math.round(v / pt * 100) : 0) + '</span></span><div class="track"><div class="fill" style="width:' + (v / pm * 100).toFixed(1) + '%;background:' + c + '"></div></div></div>').join("") + '</div>' +
+      h += '<div><div class="panel"><h3>' + esc(t("Hesaba ve karta göre")) + '</h3>' + prow.map(([n, v, c]) => '<div class="cbar"><span class="n">' + esc(n) + '</span><span class="v">' + tl(v) + ' <span class="pc">' + K.pct(pt ? Math.round(v / pt * 100) : 0) + '</span></span><div class="track"><div class="fill" style="width:' + (v / pm * 100).toFixed(1) + '%;background:' + c + '"></div></div></div>').join("") + '</div>' +
         '<div class="panel"><h3>' + esc(t("En çok ödeme yapılan şirketler")) + '</h3>' + vr.map(([k, v]) => '<div class="cbar"><span class="n">' + esc(k) + '</span><span class="v">' + tl(v) + '</span><div class="track"><div class="fill" style="width:' + (v / vm * 100).toFixed(1) + '%;background:var(--brass)"></div></div></div>').join("") + '</div></div></div>';
     }
     const fs = K.fuelStats(pits);
     if (fs.fills.length) {
       h += '<div class="panel"><h3>' + esc(t("Yakıt defteri")) + '</h3><div class="kv"><div><span>' + esc(t("Toplam yakıt")) + '</span><b>' + (fs.lt ? esc(K.ltStr(fs.lt)) : "—") + '</b></div><div><span>' + esc(t("Yakıt tutarı")) + '</span><b>' + tl(fs.tot) + '</b></div><div><span>' + esc(t("Ortalama fiyat")) + '</span><b>' + (fs.avg ? esc(K.perL(fs.avg)) : "—") + '</b></div></div>' +
-        '<div class="scroll"><table class="tbl"><thead><tr><th>' + esc(t("Tarih")) + '</th><th>' + esc(t("Şirket")) + '</th><th class="r">' + esc(t("Litre")) + '</th><th class="r">' + esc(t("₺/Lt")) + '</th><th class="r">' + esc(t("Tutar")) + '</th></tr></thead><tbody>' +
+        '<div class="scroll"><table class="tbl"><thead><tr><th>' + esc(t("Tarih")) + '</th><th>' + esc(t("Şirket")) + '</th><th class="r">' + esc(t("Litre")) + '</th><th class="r">' + esc(K.tp("₺/Lt")) + '</th><th class="r">' + esc(t("Tutar")) + '</th></tr></thead><tbody>' +
         fs.fills.map(e => '<tr><td>' + dmy(e.date) + '</td><td>' + esc(e.vendor || e.desc || "") + '</td><td class="r">' + (+e.lt > 0 ? esc(K.qty(e.lt)) : "—") + '</td><td class="r">' + (+e.lt > 0 ? num(e.amount / e.lt) : "—") + '</td><td class="r">' + tl(e.amount) + '</td></tr>').join("") +
         '</tbody></table></div>' + (fs.fills.some(e => !(+e.lt > 0)) ? '<p class="lead" style="margin:8px 0 0;font-size:13px">' + esc(t("Litresi girilmemiş yakıt fişleri ortalamaya katılmaz. Fişe dokunup litreyi ekleyebilirsiniz.")) + '</p>' : "") + '</div>';
     }
     const end = S.period === "all" ? curYM() : S.period; const ms = []; for (let k = 11; k >= 0; k--) ms.push(addMonth(end, -k));
-    const allOut = S.items.filter(e => !isIn(e) && e.date);
-    const mv = ms.map(m => r2(allOut.filter(i => i.date.slice(0, 7) === m).reduce((s, i) => s + (+i.amount || 0), 0)));
+    const mv = ms.map(m => K.sums(S.items.filter(i => (i.date || "").slice(0, 7) === m)).out);
     const mmax = Math.max(...mv, 0);
     if (mmax > 0) {
       const en = K.lang === "en";
-      const short = v => { const a = Math.abs(v); return a >= 1e6 ? (en ? (v / 1e6).toFixed(1) : (v / 1e6).toFixed(1).replace(".", ",")) + "M" : a >= 1e4 ? Math.round(v / 1e3) + (en ? "K" : "B") : Math.round(v).toLocaleString(en ? "en-GB" : "tr-TR"); };
+      const kisa = K.lang === "tr" || en ? null : new Intl.NumberFormat(K.loc, { notation: "compact", maximumFractionDigits: 1 });
+      const short = v => { const a = Math.abs(v); return kisa ? kisa.format(v) : a >= 1e6 ? (en ? (v / 1e6).toFixed(1) : (v / 1e6).toFixed(1).replace(".", ",")) + "M" : a >= 1e4 ? Math.round(v / 1e3) + (en ? "K" : "B") : Math.round(v).toLocaleString(en ? "en-GB" : "tr-TR"); };
       h += '<div class="panel"><h3>' + esc(t("Aylık harcama · son 12 ay")) + '</h3><div class="months">' + ms.map((m, ix) => { const v = mv[ix]; return '<div class="mcol' + (m === end ? " cur" : "") + '" title="' + esc(monthLabel(m) + ": " + tl(v)) + '">' + (v > 0 ? '<span class="bv">' + short(v) + '</span>' : "") + '<div class="b" style="height:calc(' + (v / mmax * 100).toFixed(1) + '% - 16px)"></div></div>'; }).join("") + '</div><div class="mlbl">' + ms.map(m => '<span>' + esc(shortMon(m)) + '</span>').join("") + '</div></div>';
     }
     return h;
   }
 
   /* ---------------- Ayarlar ve yedek ---------------- */
-  const FIELDS = [["date", "Tarih"], ["vendor", "Şirket"], ["desc", "Açıklama"], ["out", "Harcama"], ["in", "Gelen para"], ["pay", "Ödeme şekli"], ["cat", "Kategori"], ["note", "Not"]];
+  const FIELDS = [["date", "Tarih"], ["vendor", "Şirket"], ["desc", "Açıklama"], ["out", "Harcama"], ["in", "Gelen para"], ["pay", "Ödeme şekli"], ["cat", "Kategori"], ["note", "Not"], ["cur", "Para birimi"]];
   // one page per menu item; "tum" (all sections together) is used only by the tests
-  const SAYFA_ADI = () => ({ ana: "", list: t("Jurnal"), fisler: t("Fişler"), hesabim: t("Hesabım ve Abonelik"), sum: t("Özet"), rapor: t("Raporlar"), tekne: t("Tekne bilgileri"), hesap: t("Google hesabı ve eşitleme"), excel: t("Excel’den içe aktar"), yedek: t("Yedekler"), ayar: t("Ayarlar"), yonetim: t("Yönetim merkezi"), tum: t("Ayarlar") });
+  const SAYFA_ADI = () => ({ ana: "", list: t("Jurnal"), fisler: t("Fişler"), hesabim: t("Hesabım ve Abonelik"), sum: t("Özet"), rapor: t("Raporlar"), tekne: t("Tekne bilgileri"), hesaplar: t("Hesaplar ve kartlar"), hesap: t("Google hesabı ve eşitleme"), excel: t("Excel’den içe aktar"), yedek: t("Yedekler"), ayar: t("Ayarlar"), yonetim: t("Yönetim merkezi"), tum: t("Ayarlar"), tekneler: t("Tekneler"), sirket: t("Şirket paneli") });
   function viewIO(bolum) {
     const st = S.set, tum = bolum === "tum";
     const P = {};
-    let h = '<div class="panel"><h3>' + esc(t("Dil · Language")) + '</h3><div class="seg langseg" role="radiogroup" aria-label="Dil / Language"><label><input type="radio" name="lang" value="tr"' + (K.lang === "tr" ? " checked" : "") + '><span>Türkçe</span></label><label><input type="radio" name="lang" value="en"' + (K.lang === "en" ? " checked" : "") + '><span>English</span></label></div>' +
+    let h = '<div class="panel"><h3>' + esc(t("Dil · Language")) + '</h3><div class="seg langseg" role="radiogroup" aria-label="Dil / Language">' + K.DILLER.map(d => '<label lang="' + d + '"><input type="radio" name="lang" value="' + d + '"' + (K.lang === d ? " checked" : "") + '><span>' + esc(K.DIL_ADI[d]) + '</span></label>').join("") + '</div>' +
       '<p class="lead" style="margin:10px 0 0;font-size:13px">' + esc(t("Ekran, PDF rapor ve Excel tablosu seçilen dilde hazırlanır. Kayıtlarınız dil değişince değişmez. Tarih kutularının görünümü program bir sonraki açılışta yeni dile uyar.")) + '</p></div>';
     P.dil = h; h = "";
     P.hesap = senkPanel();
@@ -414,9 +472,10 @@
       '<div class="inline"><div class="field" style="flex-basis:100%"><label for="opName">' + esc(t("Tekne adı (ya da şirket, ev)")) + '</label><input id="opName" maxlength="80" value="' + esc(st.name || "") + '" placeholder="' + esc(t("Örn. M/Y Tekne Adı")) + '"></div>' +
       '<div class="field"><label for="opPrep">' + esc(t("Kaptan (raporu hazırlayan)")) + '</label><input id="opPrep" maxlength="80" value="' + esc(st.preparedBy || "") + '" placeholder="' + esc(t("Örn. Ad Soyad")) + '"></div>' +
       '<div class="field"><label for="opAppr">' + esc(t("Donatan / armatör (onaylayan)")) + '</label><input id="opAppr" maxlength="80" value="' + esc(st.approvedBy || "") + '" placeholder="' + esc(t("Örn. Ad Soyad (donatan ya da yetkilisi)")) + '"></div></div>' +
-      '<div class="inline" style="margin-top:10px"><div class="field"><label for="opAmt">' + esc(t("Başlangıç kasası (₺)")) + '</label>' + numBox("opAmt", st.opening != null ? num(st.opening) : "", 2, ' data-neg="1"') + ' placeholder="' + esc(num(0)) + '"><span class="help">' + esc(t("Defterin başladığı gün kasadaki para")) + '</span></div>' +
+      '<div class="inline" style="margin-top:10px"><div class="field"><label for="opAmt">' + esc(K.tp("Başlangıç kasası (₺)")) + '</label>' + numBox("opAmt", st.opening != null ? num(st.opening) : "", 2, ' data-neg="1"') + ' placeholder="' + esc(num(0)) + '"><span class="help">' + esc(t("Defterin başladığı gün kasadaki para")) + '</span></div>' +
       '<div class="field"><label for="opDate">' + esc(t("Başlangıç tarihi")) + '</label><input id="opDate" type="date" value="' + esc(st.openingDate || "") + '"></div>' +
-      '<div class="field"><label for="opLow">' + esc(t("Kasa uyarı sınırı (₺)")) + '</label>' + numBox("opLow", num(+st.lowLimit || 0), 2) + '><span class="help">' + esc(t("Kasa bunun altına inince uyarır. 0 = kapalı")) + '</span></div>' +
+      '<div class="field"><label for="opLow">' + esc(K.tp("Kasa uyarı sınırı (₺)")) + '</label>' + numBox("opLow", num(+st.lowLimit || 0), 2) + '><span class="help">' + esc(t("Kasa bunun altına inince uyarır. 0 = kapalı")) + '</span></div>' +
+      paraSecHTML("opPara") +
       '<button class="btn pri" id="saveOp">' + esc(t("Ayarları kaydet")) + '</button></div></div>';
     P.tekne = h;
     h = '<div class="panel" id="importPanel"><h3>' + esc(t("Excel’den içe aktar")) + '</h3>';
@@ -425,11 +484,11 @@
     h += '</div>';
     P.excel = h; h = "";
     if (WEB) h += '<div class="panel" id="yedekPanel"><h3>' + esc(t("Kayıt yeri ve yedekler")) + '</h3><p class="lead">' + esc(t("Her değişiklik anında bu telefona kaydedilir ve her gün kendiliğinden bir yedek alınır. Uygulamayı ana ekrandan sildiğinizde ya da Safari’nin site verilerini temizlediğinizde telefondaki kayıtlar da silinir; Google Drive eşitlemesini açık tutun ya da ara ara yedek dosyası alın.")) + '</p>' +
-      '<div class="btns" style="justify-content:flex-start"><button class="btn" id="backupNow">' + esc(t("Yedek dosyası al")) + '</button><label class="btn" for="restoreFile" style="cursor:pointer">' + esc(t("Yedekten geri yükle")) + '</label><input id="restoreFile" type="file" accept=".json,application/json" hidden></div>' +
+      '<div class="btns" style="justify-content:flex-start"><button class="btn" id="backupNow">' + esc(t("Yedek dosyası al")) + '</button><label class="btn" for="restoreFile" style="cursor:pointer">' + esc(t("Yedekten geri yükle")) + '</label><input id="restoreFile" type="file" accept=".json,application/json" hidden>' + silinenBtn() + '</div>' +
       '<p class="lead" style="margin:8px 0 0;font-size:13px">' + esc(t("Asıl fiş ve faturaları kâğıt ya da elektronik olarak ayrıca saklayın; programa fotoğraf eklemek, mevzuattaki saklama yükümlülüğünün (ör. VUK m. 253, TTK m. 82) yerine geçmez.")) + '</p></div>';
     else h += '<div class="panel" id="yedekPanel"><h3>' + esc(t("Kayıt yeri ve yedekler")) + '</h3><p class="lead">' + esc(t("Her değişiklik anında bu bilgisayara kaydedilir ve her gün kendiliğinden bir yedek alınır. Program kapanıp açıldığında kaldığı yerden devam eder.")) + '</p>' +
       '<div class="pathbox">' + esc(S.klasor || "") + '</div>' +
-      '<div class="btns" style="justify-content:flex-start"><button class="btn" id="openFolder">' + esc(t("Klasörü aç")) + '</button><button class="btn" id="backupNow">' + esc(t("Şimdi yedek al")) + '</button><label class="btn" for="restoreFile" style="cursor:pointer">' + esc(t("Yedekten geri yükle")) + '</label><input id="restoreFile" type="file" accept=".json" hidden></div>' +
+      '<div class="btns" style="justify-content:flex-start"><button class="btn" id="openFolder">' + esc(t("Klasörü aç")) + '</button><button class="btn" id="backupNow">' + esc(t("Şimdi yedek al")) + '</button><label class="btn" for="restoreFile" style="cursor:pointer">' + esc(t("Yedekten geri yükle")) + '</label><input id="restoreFile" type="file" accept=".json" hidden>' + silinenBtn() + '</div>' +
       '<p class="lead" style="margin:12px 0 0;font-size:13px">' + esc(t("Başka bilgisayara taşımak için bu klasörü USB belleğe kopyalayın. Yeni bilgisayarda programı kurup klasörü aynı yere (Belgeler) yapıştırın.")) + '</p>' +
       '<p class="lead" style="margin:8px 0 0;font-size:13px">' + esc(t("Asıl fiş ve faturaları kâğıt ya da elektronik olarak ayrıca saklayın; programa fotoğraf eklemek, mevzuattaki saklama yükümlülüğünün (ör. VUK m. 253, TTK m. 82) yerine geçmez.")) + '</p></div>';
     P.yedek = h;
@@ -447,6 +506,72 @@
     return P[bolum] || P.ayar;
   }
 
+  /* ---------------- Hesaplar ve kartlar ---------------- */
+  function viewHesaplar() {
+    const p = S.period || curYM(), tur = TUR_AD();
+    const satir = h => {
+      const all = K.hesapFor(S.items, S.set, h.id, "all"), kart = h.tur === "kart", harcama = ozetFor(p).hesap[h.id] || 0;
+      const n = S.items.filter(e => K.hesapOf(e) === h.id || e.hedef === h.id).length;
+      const durum = h.durum === "pasif" ? '<span class="chip">' + esc(t("Pasif")) + '</span>' : h.durum === "arsiv" ? '<span class="chip">' + esc(t("Arşivde")) + '</span>' : "";
+      const limit = kart && +h.limit > 0 && p !== "all" ? '<span class="chip' + (harcama > +h.limit ? " neg" : "") + '">' + esc(t("Limit {tutar}", { tutar: tl(h.limit) })) + '</span>' : "";
+      return '<li><button class="row hrow" data-hesap="' + esc(h.id) + '"><span class="t"><span class="ds">' + esc(hesapAdi(h)) + (h.sahip ? ' <small>· ' + esc(h.sahip) + '</small>' : "") + '</span><span class="mt"><span class="chip pay">' + esc(tur[h.tur] || h.tur) + '</span>' + (h.banka ? '<span>' + esc(h.banka) + '</span>' : "") + durum + limit + '<span>' + esc(t("{n} işlem", { n })) + '</span></span></span>' +
+        '<span class="amtw"><span class="amt">' + (kart ? tl(harcama) : tl(all.kalan)) + '</span><span class="bal">' + esc(kart ? (p === "all" ? t("Toplam harcama") : t("{ay} harcaması", { ay: monthLabel(p) })) : t("Bakiye")) + '</span></span></button></li>';
+    };
+    const l = hesapListe(), akt = l.filter(h => h.durum !== "arsiv"), ars = l.filter(h => h.durum === "arsiv");
+    let h = '<div class="panel"><h3>' + esc(t("Hesaplar ve kartlar")) + '</h3><p class="lead">' + esc(t("Nakit kasa, banka hesapları, kredi kartları ve personel avansları ayrı ayrı izlenir. Kartla yapılan harcama kartın hesabına yazılır; nakit kasadan düşmez. Kart numarasının yalnızca son 4 hanesi saklanır.")) + '</p>' +
+      '<div class="btns" style="justify-content:flex-start;margin-bottom:10px"><button class="btn pri" id="hesapEkle">' + esc(t("Hesap / kart ekle")) + '</button><button class="btn" id="trEkle">' + esc(t("Transfer kaydet")) + '</button></div>' +
+      '<ul class="rows">' + akt.map(satir).join("") + '</ul></div>';
+    if (ars.length) h += '<div class="panel"><h3>' + esc(t("Arşivdeki hesaplar")) + '</h3><ul class="rows">' + ars.map(satir).join("") + '</ul></div>';
+    return h;
+  }
+  function openHesap(id) {
+    const x = id ? K.hesapBul(S.set, id) : null, v = x || { tur: "kart", ad: "", durum: "aktif" }, tur = TUR_AD(), nakit = v.id === "nakit";
+    const kul = x ? S.items.some(e => K.hesapOf(e) === x.id || e.hedef === x.id) : false;
+    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><form class="sheet" id="hForm" role="dialog" aria-modal="true" aria-labelledby="sh" novalidate><h3 id="sh">' + esc(x ? hesapAdi(x) : t("Hesap / kart ekle")) + '</h3><div class="grid2">' +
+      '<div class="field"><label for="h_tur">' + esc(t("Türü")) + '</label><select id="h_tur"' + (nakit ? " disabled" : "") + '>' + K.HESAP_TURLERI.map(k => '<option value="' + k + '"' + (v.tur === k ? " selected" : "") + '>' + esc(tur[k]) + '</option>').join("") + '</select></div>' +
+      '<div class="field"><label for="h_ad">' + esc(t("Adı")) + '</label><input id="h_ad" maxlength="60" value="' + esc(x ? hesapAdi(x).replace(/ ··\d{4}$/, "") : "") + '" placeholder="' + esc(t("Örn. Kaptan kartı")) + '"></div>' +
+      '<div class="field"><label for="h_sahip">' + esc(t("Sahibi / kullanan")) + '</label><input id="h_sahip" maxlength="60" value="' + esc(v.sahip || "") + '" placeholder="' + esc(t("Örn. Kaptan, hostes")) + '"></div>' +
+      '<div class="field"><label for="h_banka">' + esc(t("Banka")) + '</label><input id="h_banka" maxlength="60" value="' + esc(v.banka || "") + '" placeholder="' + esc(t("İsteğe bağlı")) + '"></div>' +
+      '<div class="field"><label for="h_son4">' + esc(t("Kartın son 4 hanesi")) + '</label><input id="h_son4" inputmode="numeric" maxlength="4" value="' + esc(v.son4 || "") + '" placeholder="1234"><span class="help">' + esc(t("Tam kart numarası, CVV ya da şifre yazmayın; saklanmaz.")) + '</span></div>' +
+      '<div class="field"><label for="h_limit">' + esc(K.tp("Aylık harcama limiti (₺)")) + '</label>' + numBox("h_limit", +v.limit > 0 ? num(v.limit) : "", 2) + ' placeholder="' + esc(t("İsteğe bağlı")) + '"></div>' +
+      (nakit ? '<p class="help full">' + esc(t("Nakit kasanın başlangıç tutarı “Tekne bilgileri” bölümünde.")) + '</p>' : '<div class="field"><label for="h_acilis">' + esc(K.tp("Başlangıç bakiyesi (₺)")) + '</label>' + numBox("h_acilis", v.acilis != null && v.acilis !== "" ? num(v.acilis) : "", 2, ' data-neg="1"') + ' placeholder="' + esc(num(0)) + '"></div>') +
+      '<div class="field full"><label for="h_aciklama">' + esc(t("Açıklama")) + '</label><input id="h_aciklama" maxlength="200" value="' + esc(v.aciklama || "") + '"></div>' +
+      (nakit ? "" : '<div class="full"><p class="seglbl" style="margin-bottom:4px">' + esc(t("Durum")) + '</p><div class="seg" role="radiogroup">' + [["aktif", t("Aktif")], ["pasif", t("Pasif")], ["arsiv", t("Arşivde")]].map(([k, l]) => '<label><input type="radio" name="h_durum" value="' + k + '"' + ((v.durum || "aktif") === k ? " checked" : "") + '><span>' + esc(l) + '</span></label>').join("") + '</div><span class="help">' + esc(t("Pasif ve arşivdeki hesaplar yeni kayıtlarda çıkmaz; eski kayıtları korunur.")) + '</span></div>') +
+      '</div><div class="err-t" id="herr"></div><div class="acts">' + (x && !nakit && !kul ? '<button type="button" class="btn danger" id="hesapSilBtn" data-id="' + esc(x.id) + '">' + esc(t("Sil")) + '</button>' : "") + '<div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Vazgeç")) + '</button><button type="submit" class="btn pri">' + esc(t("Kaydet")) + '</button></div></div></form></div>';
+    S.hesapDuz = x ? x.id : null;
+    setTimeout(() => { const f = $("#h_ad"), a = document.activeElement; if (f && !(a && a.closest && a.closest("#hForm"))) f.focus(); }, 30);
+  }
+  async function hesapKaydet() {
+    const g = id => document.getElementById(id), err = g("herr");
+    const ad = g("h_ad").value.trim(), son4 = g("h_son4").value.replace(/\s/g, ""), limit = toNum(g("h_limit").value), acilis = g("h_acilis") ? toNum(g("h_acilis").value) : NaN;
+    if (!ad) { err.textContent = t("Hesaba bir ad verin."); g("h_ad").focus(); return; }
+    if (son4 && !/^\d{4}$/.test(son4)) { err.textContent = t("Kart numarasının yalnızca son 4 hanesini yazın."); g("h_son4").focus(); return; }
+    const l = hesapListe().map(h => Object.assign({}, h)), x = S.hesapDuz ? l.find(h => h.id === S.hesapDuz) : null;
+    if (!x && l.length >= 60) { err.textContent = t("En fazla 60 hesap tanımlanabilir."); return; }
+    const h = x || { id: "h" + newId(), sira: Math.max(0, ...l.map(y => +y.sira || 0)) + 1 };
+    h.ad = x && VARS_AD[x.id] && ad === t(VARS_AD[x.id]) ? VARS_AD[x.id] : ad;
+    if (h.id !== "nakit") h.tur = g("h_tur").value;
+    h.sahip = g("h_sahip").value.trim(); h.banka = g("h_banka").value.trim(); h.son4 = son4; h.aciklama = g("h_aciklama").value.trim();
+    h.limit = limit > 0 ? r2(limit) : null; if (h.id !== "nakit") h.acilis = isNaN(acilis) ? null : r2(acilis);
+    const d = document.querySelector('input[name="h_durum"]:checked'); h.durum = h.id === "nakit" ? "aktif" : d ? d.value : "aktif";
+    Object.keys(h).forEach(k => { if (h[k] === "" || h[k] == null) delete h[k]; });
+    { const kap = (S.set.closed || []).slice().sort()[0], o = x ? K.hesapBul(S.set, x.id) : null;   // a closed month is final: what its balances rest on is not changed under it
+      if (kap) {
+        const oA = o ? +o.acilis || 0 : 0, nA = +h.acilis || 0, nakitMi = tt => tt === "nakit";
+        const engel = oA !== nA || (o && (o.tur !== h.tur) && (nakitMi(o.tur) || nakitMi(h.tur))) || (o && (o.durum || "aktif") !== h.durum && nakitMi(h.tur)) || (!o && nakitMi(h.tur) && h.durum !== "aktif");
+        if (engel) { err.textContent = engelMesaji({ kod: "kapali", ay: kap }); return; }
+      } }
+    if (!x) l.push(h);
+    const once = S.set.hesaplar; S.set.hesaplar = l;
+    try { await persistSettings(); closeSheet(); render(); toast(x ? t("Hesap güncellendi.") : t("Hesap eklendi: {ad}", { ad: hesapAdi(h) })); }
+    catch (e) { S.set.hesaplar = once; err.textContent = e.message; }
+  }
+  async function hesapSilIslem(id) {
+    if (S.items.some(e => K.hesapOf(e) === id || e.hedef === id)) { toast(t("Bu hesabın kayıtları var; silinemez, pasife alın ya da arşivleyin.")); return; }
+    const once = S.set.hesaplar; S.set.hesaplar = hesapListe().filter(h => h.id !== id);
+    try { await persistSettings(); closeSheet(); render(); toast(t("Hesap silindi.")); } catch (e) { S.set.hesaplar = once; toast(e.message); }
+  }
+
   /* ---------------- Excel import ---------------- */
   function viewImport() {
     const I = S.imp, P = I.parsed;
@@ -459,8 +584,17 @@
     }
     const nOut = P.ok.filter(r => r.type === "out"), nIn = P.ok.filter(r => r.type === "in");
     h += '<div class="stat">' + esc(t("Eklenecek:")) + ' <b>' + esc(t("{n} harcama", { n: nOut.length })) + '</b> (' + tl(K.sums(nOut).out) + ') · <b>' + esc(t("{n} gelen para", { n: nIn.length })) + '</b> (' + tl(K.sums(nIn).in) + ')</div>';
-    if (P.dup || P.skip) h += '<div class="stat" style="color:var(--muted)">' + esc([P.dup ? t("{n} fiş zaten defterde, atlanacak.", { n: P.dup }) : "", P.skip ? t("{n} satırın tutarı okunamadı, atlanacak.", { n: P.skip }) : ""].filter(Boolean).join(" ")) + '</div>';
-    if (P.devir != null) h += '<label class="check" style="margin:10px 0"><input type="checkbox" id="setOp"' + (I.setOp ? " checked" : "") + '> <span>' + esc(t("Başlangıç kasasını {tutar} ({ay} devri) olarak ayarla", { tutar: tl(P.devir), ay: monthLabel(P.devirMonth) })) + (S.set.opening != null ? esc(" · " + t("şu an {tutar}", { tutar: tl(S.set.opening) })) : "") + '</span></label>';
+    P.uyari.forEach(u => { h += '<div class="note warn"><span>' + esc(u) + '</span></div>'; });
+    if (P.atlanan.length) h += '<div class="stat" style="color:var(--muted)">' + esc(t("Kart ve konsolide sayfaları (aylık sayfalardaki kayıtların tekrarı) okunmadı: {liste}.", { liste: P.atlanan.join(", ") })) + '</div>';
+    if (P.doviz) h += '<div class="note warn"><span>' + esc(t("{n} satır başka para biriminde ({kod}); defter {para}. Kur olmadan çevrilemeyeceği için bu satırlar içe aktarılmayacak. Onları fiş formundan kurla girin.", { n: P.doviz, kod: P.dovizKod, para: K.paraKodu() })) + '</span></div>';
+    if (P.toplamAtla.length) h += '<div class="note warn"><span>' + esc(t("{n} satır toplam satırı sanılıp atlandı: {liste}. Gerçek kayıtsa şirket ya da açıklama alanını doldurun (tarihi yoksa tarih sütununu da) ve dosyayı yeniden yükleyin.", { n: P.toplamAtla.length, liste: [...new Set(P.toplamAtla)].slice(0, 6).join(", ") + (new Set(P.toplamAtla).size > 6 ? "…" : "") })) + '</span></div>';
+    if (P.dup || P.skip) h += '<div class="stat" style="color:var(--muted)">' + esc([P.dup ? t("{n} fiş zaten defterde, atlanacak.", { n: P.dup }) : "", P.skip ? t("{n} satır atlanacak: tutarı okunamadı ya da transfer satırı. Transfer satırları içe aktarılmaz.", { n: P.skip }) : ""].filter(Boolean).join(" ")) + '</div>';
+    if (P.acilisOnce) h += '<div class="stat" style="color:var(--danger)">' + esc(t("{n} satır açılış tarihinden ({tarih}) önceye ait, atlanacak.", { n: P.acilisOnce, tarih: dmy(P.acilis) })) + '</div>';
+    if (P.kapali) h += '<div class="stat" style="color:var(--danger)">' + esc(t("{n} satır kapatılmış bir döneme ait, atlanacak. Bu satırları eklemek için önce dönemi yeniden açın.", { n: P.kapali })) + '</div>';
+    const kapaliAy = (S.set.closed || []).slice().sort()[0] || "";   // a closed month carried the cash on: the opening cash is not changed under it
+    if (P.devir != null && kapaliAy) h += '<div class="note warn"><span>' + esc(t("{ay} dönemi kapatıldı. Önce dönemi yeniden açın.", { ay: monthLabel(kapaliAy) })) + '</span></div>';
+    if (P.devir != null && P.oncekiKayit) h += '<div class="note warn"><span>' + esc(t("Defterde {tarih} tarihinden önce kayıtlar var; başlangıç kasasını bu tarihe ayarlarsanız bu kayıtlar iki kez sayılır. Bu yüzden kutu işaretsiz geldi.", { tarih: dmy(P.devirMonth + "-01") })) + '</span></div>';
+    if (P.devir != null) h += '<label class="check" style="margin:10px 0"><input type="checkbox" id="setOp"' + (I.setOp ? " checked" : "") + (kapaliAy ? " disabled" : "") + '> <span>' + esc(t("Başlangıç kasasını {tutar} ({ay} devri) olarak ayarla", { tutar: tl(P.devir), ay: monthLabel(P.devirMonth) })) + (S.set.opening != null ? esc(" · " + t("şu an {tutar}", { tutar: tl(S.set.opening) })) : "") + '</span></label>';
     if (P.ok.length) h += '<div class="scroll" style="border:1px solid var(--line);border-radius:10px"><table class="pv"><thead><tr><th>' + esc(t("Tarih")) + '</th><th>' + esc(t("Şirket")) + '</th><th>' + esc(t("Açıklama")) + '</th><th>' + esc(t("Kategori")) + '</th><th>' + esc(t("Ödeme")) + '</th><th style="text-align:right">' + esc(t("Harcama")) + '</th><th style="text-align:right">' + esc(t("Gelen")) + '</th></tr></thead><tbody>' + P.ok.slice(0, 10).map(r => '<tr><td class="mono">' + dmy(r.date) + '</td><td>' + esc(r.vendor) + '</td><td>' + esc(r.desc) + '</td><td>' + esc(K.catLabel(r.cat)) + '</td><td>' + esc(K.payName(r.pay)) + '</td><td class="r">' + (r.type === "out" ? tl(r.amount) : "") + '</td><td class="r g">' + (r.type === "in" ? tl(r.amount) : "") + '</td></tr>').join("") + '</tbody></table></div><p class="lead" style="margin:6px 0 0;font-size:13px">' + esc((P.ok.length > 10 ? t("İlk 10 satır gösteriliyor.") + " " : "") + t("Kategoriler şirket adından tahmin edildi; sonra fişe dokunup değiştirebilirsiniz.")) + '</p>';
     const can = (P.ok.length || (P.devir != null && I.setOp)) && !I.busy;
     h += '<div class="btns" style="justify-content:flex-start;margin-top:16px"><button class="btn pri" id="doImport"' + (can ? "" : " disabled") + '>' + esc(I.busy ? t("Aktarılıyor…") : P.ok.length ? t("{n} kaydı ekle", { n: P.ok.length }) : t("Kasayı ayarla")) + '</button><button class="btn" id="cancelImport"' + (I.busy ? " disabled" : "") + '>' + esc(t("Vazgeç")) + '</button></div>';
@@ -488,60 +622,147 @@
     desc: [/açıklama|aciklama/, /description|detay|kalem|item|ürün|urun|hizmet|details/],
     out: [/harcama|expense/, /tutar|amount|gider|bedel|ücret|ucret|fiyat|price|cost|spent|debit/],
     in: [/gelen|cash in|money in/, /gelir|tahsilat|giriş|giris|income|received|deposit/],
-    pay: [/ödeme|odeme|payment/, /nakit|kart|şekli|sekli|method/],
+    pay: [/ödeme|odeme|payment|hesap \/ kart|account \/ card/, /nakit|kart|şekli|sekli|method|hesap|account/],
     cat: [/kategori|category/, /tür$|tip$|grup|type$/],
-    note: [/^not\b|notlar|note|remark|comment/]
+    note: [/^not\b|notlar|note|remark|comment/],
+    cur: [/para birimi|döviz|doviz|currency|^cur$|^ccy$/]
   };
   const hdrLower = x => String(x ?? "").toLocaleLowerCase("tr").trim();
   const anyRe = (re, x) => { const s = String(x ?? "").trim(); return !!s && (re.test(s.toLocaleLowerCase("tr")) || re.test(s.toLocaleLowerCase("en"))); };
-  function guessMap(headers) { const used = new Set(); const map = {}; for (const [k] of FIELDS) { map[k] = -1; outer: for (const re of GUESS[k]) { for (let i = 0; i < headers.length; i++) { if (!used.has(i) && anyRe(re, headers[i])) { map[k] = i; used.add(i); break outer; } } } } return map; }
-  function detectHeader(raw) { let best = 0, bs = -1; raw.slice(0, 25).forEach((r, ix) => { const cells = (r || []).filter(x => typeof x === "string" && x.trim()); const hits = cells.filter(c => Object.values(GUESS).some(a => a.some(re => anyRe(re, c)))).length; const sc = hits * 3 + (cells.length > 1 ? cells.length : 0); if (sc > bs) { bs = sc; best = ix; } }); return best; }
+  // headers → column of each field. First the words of the export in all seven languages (hesap.js xlsAlan), then the looser Turkish / English patterns.
+  function guessMap(headers) {
+    const used = new Set(), map = {};
+    for (const [k] of FIELDS) map[k] = -1;
+    headers.forEach((h, i) => { const k = K.xlsAlan(h); if (k === "yok") used.add(i); else if (k && map[k] === -1) { map[k] = i; used.add(i); } });
+    for (const [k] of FIELDS) { if (map[k] > -1) continue; outer: for (const re of GUESS[k]) { for (let i = 0; i < headers.length; i++) { if (!used.has(i) && anyRe(re, headers[i])) { map[k] = i; used.add(i); break outer; } } } }
+    return map;
+  }
+  // the month sheets of an export of this program have a fixed layout (row 7: date, company, description, expense, cash in, account, category, cash effect, note): a column the words did not find is read from there
+  const KJ_DUZEN = { date: 0, vendor: 1, desc: 2, out: 3, in: 4, pay: 5, cat: 6, note: 8 };
+  function mapFor(name, raw, hdr) {
+    const headers = headersOf(raw, hdr), map = guessMap(headers), wb = S.imp && S.imp.wb;
+    if (wb && wb.Dil && hdr === 6 && headers.length >= 9 && K.xlsSayfaTuru(name) === "ay") {
+      const used = new Set(Object.values(map));
+      for (const [k, i] of Object.entries(KJ_DUZEN)) if (map[k] === -1 && !used.has(i)) { map[k] = i; used.add(i); }
+    }
+    return map;
+  }
+  function detectHeader(raw) { let best = 0, bs = -1; raw.slice(0, 25).forEach((r, ix) => { const cells = (r || []).filter(x => typeof x === "string" && x.trim()); const hits = cells.filter(c => K.xlsAlan(c) || Object.values(GUESS).some(a => a.some(re => anyRe(re, c)))).length; const sc = hits * 3 + (cells.length > 1 ? cells.length : 0); if (sc > bs) { bs = sc; best = ix; } }); return best; }
   function headersOf(raw, hdr) { const r = raw[hdr] || []; const w = Math.max(0, ...raw.slice(hdr, hdr + 60).map(x => (x || []).length)); return Array.from({ length: w }, (_, i) => r[i] != null ? String(r[i]).trim() : ""); }
   function sheetPeriod(raw) { for (let r = 0; r < Math.min(raw.length, 10); r++) for (const v of raw[r] || []) { if (typeof v === "number" && v > 30000 && v < 80000) { const d = toISO(v); if (d) return d.slice(0, 7); } } return null; }
   const keyOf = i => (i.type || "out") + "|" + (i.date || "") + "|" + (+i.amount || 0).toFixed(2) + "|" + hdrLower(i.vendor) + "|" + hdrLower(i.desc);
+  // the account a card payment of the import goes to: the book's card account (id "kart" or the first active card); none at all → "kart", which the book reads as a card too
+  const kartHesapId = () => { const l = K.hesaplar(S.set).filter(h => h.tur === "kart" && h.durum === "aktif"); return (l.find(h => h.id === "kart") || l[0] || { id: "kart" }).id; };
+  const KART_RE = /kart|kredi|card|\bpos\b|carte|carta|tarjeta|cr[eé]dit|πιστωτικ|κάρτα|κάρτες/, NAKIT_RE = /nakit|cash|peşin|caisse|esp[eè]ces|cassa|contanti|caja|efectivo|kasse|bargeld|μετρητ|ταμείο/, HAVALE_RE = /havale|eft|transfer|virement|bonifico|transferencia|überweisung|μεταφορά/;
+  const kartHesaplari = () => K.hesaplar(S.set).filter(h => h.tur === "kart" && h.durum === "aktif");
+  function hesapUyar(acc, ad) { const k = String(ad ?? "").trim().slice(0, 40); (acc.hesapUyari = acc.hesapUyari || {})[k] = ((acc.hesapUyari || {})[k] || 0) + 1; }
+  const hesapCoz = pr => { const m = K.xlsHesapEsle(S.set, pr); return m ? { h: m.h, belirsiz: m.belirsiz } : {}; };
   function parseSheet(raw, hdr, M, acc) {
     let lastDate = null;
     const cell = (row, k) => M[k] > -1 ? row[M[k]] : null;
+    // the currency of a row: its currency column, a symbol or code in the amount ("100 €"), or the amount column's header ("Harcama (€)")
+    const bas = raw[hdr] || [], PB = K.paraKodu();
+    const basPara = k => M[k] > -1 ? K.paraTani(bas[M[k]]) : "";
+    const satirPara = row => K.paraTani(cell(row, "cur")) || (typeof cell(row, "out") === "string" ? K.paraTani(cell(row, "out")) : "") || (typeof cell(row, "in") === "string" ? K.paraTani(cell(row, "in")) : "") || basPara("out") || basPara("in");
     for (let r = hdr + 1; r < raw.length; r++) {
       const row = raw[r]; if (!row || !row.some(x => x != null && x !== "")) continue;
       const firstTxt = row.find(x => typeof x === "string" && x.trim()) || "";
       const outV = K.toNum(cell(row, "out")), inV = K.toNum(cell(row, "in"));
-      if (anyRe(/devir|brought forward|carried forward|opening balance/, firstTxt) && !toISO(cell(row, "date"))) { const v = !isNaN(inV) ? inV : outV; if (!isNaN(v) && acc.devirRaw == null) acc.devirRaw = v; continue; }
-      if (anyRe(/^(genel )?toplam|^kalan kasa|^ara toplam|^total|^subtotal|^cash on hand|^balance|krem renkli|dönem kapandı|^period closed/, firstTxt)) continue;
+      const satirTuru = K.xlsSatirTuru(firstTxt);
+      if (row.some(K.xlsOdemeTransferMi)) { acc.skip++; continue; }   // a payment / transfer between accounts (Kartlar sheet): never an expense or a refund
+      if ((satirTuru === "devir" || anyRe(/devir|brought forward|carried forward|opening balance/, firstTxt)) && !toISO(cell(row, "date"))) { const v = !isNaN(inV) ? inV : outV; if (!isNaN(v) && acc.devirRaw == null) acc.devirRaw = v; continue; }
+      const duzTxt = String(firstTxt).replace(/\d{1,4}[-./]\d{1,2}[-./]\d{1,4}/g, " ").replace(/[\s:·\-–()]+$/, "").trim(), tarihli = !!toISO(cell(row, "date"));
+      const bos = k => M[k] < 0 || String(cell(row, k) ?? "").trim() === "";
+      // a totals row: a totals label with no date in the row; skipped. With a date in the row it is a record ("Total Energies Bodrum", a company called "Total" with its description),
+      // except in a file this program did not write when the label has the date inside it ("Toplam 30.11.2026") or the row has neither description nor category (a dated "Ara toplam").
+      // In this program's own export no dated row is ever a totals row.
+      const toplamGibi = satirTuru === "toplam" || anyRe(/^(genel )?toplam|^kalan kasa|^ara toplam|^total|^subtotal|^cash on hand|^balance|krem renkli|dönem kapandı|^period closed/, firstTxt);
+      const tarihliToplam = tarihli && !acc.bizim && K.xlsToplamEtiketi(duzTxt) && (duzTxt !== String(firstTxt).trim() || (bos("desc") && bos("cat")));
+      if (toplamGibi && (!tarihli || tarihliToplam)) {
+        // a plain undated totals label is skipped without a word; anything else that looked like one is counted and shown, with its amount
+        if (!K.xlsToplamEtiketi(firstTxt) || tarihli) { const tv = !isNaN(outV) && outV ? outV : !isNaN(inV) ? inV : NaN; (acc.toplamAtla = acc.toplamAtla || []).push(String(firstTxt).trim() + (isNaN(tv) ? "" : " " + tl(tv))); }
+        continue;
+      }
       const vendor = String(cell(row, "vendor") ?? "").trim(), desc = String(cell(row, "desc") ?? "").trim();
       let type, amount;
-      if (!isNaN(outV) && outV !== 0) { type = "out"; amount = outV; } else if (!isNaN(inV) && inV !== 0) { type = "in"; amount = inV; } else { if (vendor || desc) acc.skip++; continue; }
+      if (!isNaN(outV) && outV < 0) { type = "iade"; amount = outV; }   // a refund is written as a negative expense
+      else if (!isNaN(outV) && outV !== 0) { type = "out"; amount = outV; } else if (!isNaN(inV) && inV !== 0) { type = "in"; amount = inV; } else { if (vendor || desc) acc.skip++; continue; }
+      const rp = satirPara(row);
+      if (rp && rp !== PB) { acc.doviz = (acc.doviz || 0) + 1; acc.dovizKod = acc.dovizKod || rp.replace(/^\?/, ""); continue; }   // "?¥": a currency the book cannot hold   // never booked 1:1 in another currency
       const rawDate = cell(row, "date"); let date = toISO(rawDate);
       if (!date) date = lastDate || null; else lastDate = date;
       let note = String(cell(row, "note") ?? "").trim();
       if (typeof rawDate === "string" && /\d\s*[-–]\s*\d/.test(rawDate) && !note) note = t("Tarih: {tarih}", { tarih: rawDate.trim() });
       const cat = type === "in" ? "" : (K.catKey(String(cell(row, "cat") ?? "").trim()) || K.guessCat(vendor, desc));
       const pr = cell(row, "pay");
-      const pay = type === "in" ? (anyRe(/eft/, pr) ? "eft" : anyRe(/havale|transfer|banka|bank/, pr) ? "havale" : anyRe(/nakit|cash|peşin/, pr) ? "nakit" : "") : anyRe(/kart|kredi|card|pos|banka|bank/, pr) ? "kart" : anyRe(/nakit|cash|peşin/, pr) ? "nakit" : "";
+      const xo = K.xlsOdeme(pr);   // an export of this program ends the account with " · <how it was paid>", in its own language
+      const ac = hesapCoz(pr);
+      const payIn = xo ? (xo === "kart" ? "" : xo) : anyRe(/eft/, pr) ? "eft" : anyRe(/havale|transfer|banka|bank/, pr) ? "havale" : anyRe(/nakit|cash|peşin/, pr) ? "nakit" : "";
+      let pay, hesap = "";
+      if (ac.h) {   // the cell names one of the book's accounts: account and type come from there, in any language
+        hesap = ac.h.id === "nakit" ? "" : ac.h.id;
+        pay = type === "in" ? payIn : ac.h.tur === "kart" ? "kart" : ac.h.tur === "nakit" ? "nakit" : "";
+        if (ac.belirsiz) hesapUyar(acc, pr);
+      } else if (type === "in") { pay = payIn; }
+      else if (xo) { pay = xo === "havale" || xo === "eft" ? "" : xo; }
+      else if (!String(pr ?? "").trim()) { pay = ""; }
+      else if (KART_RE.test(hdrLower(pr))) { pay = "kart"; if (kartHesaplari().length > 1) hesapUyar(acc, pr); }   // last resort: the words of the seven languages
+      else if (NAKIT_RE.test(hdrLower(pr))) { pay = "nakit"; }
+      else { pay = ""; if (!HAVALE_RE.test(hdrLower(pr))) hesapUyar(acc, pr); }   // a name nobody knows (a bank account, "Garanti Bonus"): said out loud, not guessed
       const rec = { type, date: date || todayISO(), vendor, desc, cat, amount: r2(Math.abs(amount)), note };
       if (pay) rec.pay = pay;
+      if (pay === "kart" && type !== "in") rec.hesap = hesap || kartHesapId();   // an expense AND a refund on a card belong to the card account, not the cash box
+      else if (hesap) rec.hesap = hesap;
       if (cat === "Yakıt") { const lt = K.parseLt(desc + " " + note); if (lt > 0) rec.lt = lt; }
       acc.rows.push(rec);
       if (date && (!acc.minDate || date < acc.minDate)) acc.minDate = date;
     }
   }
+  // what the reader could not use of a sheet, said out loud: never a silent shortfall
+  function sheetUyari(name, raw, hdr, M, uyari) {
+    if (!raw.slice(hdr + 1).some(r => r && r.some(x => x != null && x !== ""))) return;
+    if (M.out < 0 && M.in < 0) { uyari.push(t("“{sayfa}” sayfasında tutar sütunu (Harcama ya da Gelen para) tanınmadı; bu sayfadan kayıt alınmayacak. Sayfayı tek tek seçip sütunları elle eşleyebilirsiniz.", { sayfa: name })); return; }
+    const kullanilan = new Set(Object.values(M)), tanimsiz = [];
+    headersOf(raw, hdr).forEach((h, i) => { if (h && !kullanilan.has(i) && K.xlsAlan(h) !== "yok" && !tanimsiz.includes(h)) tanimsiz.push(h); });
+    if (tanimsiz.length) uyari.push(t("“{sayfa}” sayfasındaki şu sütun başlıkları tanınmadı ve okunmadı: {liste}.", { sayfa: name, liste: tanimsiz.slice(0, 6).join(", ") + (tanimsiz.length > 6 ? "…" : "") }));
+  }
   function runParse() {
     const I = S.imp; const have = new Set(S.items.map(keyOf));
-    const sheets = I.sheet === "__all" ? I.sheets : [I.sheet];
-    const all = []; let skip = 0, devir = null, devirMonth = null, devirKey = null;
+    const tum = I.sheet === "__all";
+    // the card and consolidated sheets of an export repeat what the month sheets already hold; they are not read again
+    // (only in a file this program exported, marked I.wb.Dil; somebody else's "Cards" or "Konsolide" sheet is read like any other, with a warning)
+    const bizim = !!I.wb.Dil, kk = n => ["kart", "konsolide"].includes(K.xlsSayfaTuru(n));
+    const sheets = tum ? I.sheets.filter(n => !bizim || !kk(n) || I.sheets.every(kk)) : [I.sheet];
+    const atlanan = tum ? I.sheets.filter(n => !sheets.includes(n)) : [];
+    if (!tum && bizim && kk(I.sheet)) {   // the card / consolidated sheet of this program's own export repeats the month sheets: refused, not read
+      I.parsed = { ok: [], skip: 0, dup: 0, devir: null, devirMonth: null, kapali: 0, acilisOnce: 0, acilis: "", doviz: 0, dovizKod: "", uyari: [t("“{sayfa}” sayfası ayrı içe aktarılamaz: Kartlar ve Konsolide sayfaları aylık sayfalardaki kayıtların tekrarıdır. Aylık sayfaları ya da “Tüm sayfalar”ı seçin.", { sayfa: I.sheet })], atlanan: [], toplamAtla: [] };
+      I.setOp = false; return;
+    }
+    const all = []; let skip = 0, devir = null, devirMonth = null, devirKey = null, doviz = 0, dovizKod = "";
+    const uyari = [], toplamAtla = [], hesapUyari = {};
+    if (tum && !bizim) I.sheets.filter(kk).forEach(n => uyari.push(t("“{sayfa}” sayfası bu programın dışa aktardığı dosyadan olmadığı için okunuyor. Aynı kayıtlar başka sayfalarda da varsa iki kez eklenebilir; önizlemeyi kontrol edin.", { sayfa: n })));
+    if (I.wb.Atlanan && I.wb.Atlanan.length) uyari.push(t("Dosyadaki şu sayfalar okunamadı ve atlandı: {liste}.", { liste: I.wb.Atlanan.join(", ") }));
     sheets.forEach(name => {
       let raw, hdr, M;
-      if (name === I.sheet) { raw = I.raw; hdr = I.hdr; M = I.map; } else { raw = I.wb.Sheets[name] || []; hdr = detectHeader(raw); M = guessMap(headersOf(raw, hdr)); }
-      const acc = { rows: [], skip: 0, devirRaw: null, minDate: null };
-      parseSheet(raw, hdr, M, acc); skip += acc.skip; all.push(...acc.rows);
+      if (name === I.sheet) { raw = I.raw; hdr = I.hdr; M = I.map; } else { raw = I.wb.Sheets[name] || []; hdr = detectHeader(raw); M = mapFor(name, raw, hdr); }
+      sheetUyari(name, raw, hdr, M, uyari);
+      const acc = { rows: [], skip: 0, devirRaw: null, minDate: null, bizim };
+      parseSheet(raw, hdr, M, acc); skip += acc.skip; all.push(...acc.rows); toplamAtla.push(...(acc.toplamAtla || [])); Object.entries(acc.hesapUyari || {}).forEach(([k, n]) => { hesapUyari[k] = (hesapUyari[k] || 0) + n; }); doviz += acc.doviz || 0; dovizKod = dovizKod || acc.dovizKod || "";
       if (acc.devirRaw != null) { const pm = sheetPeriod(raw) || (acc.minDate ? acc.minDate.slice(0, 7) : null); const k = pm || "9999"; if (devirKey == null || k < devirKey) { devirKey = k; devir = acc.devirRaw; devirMonth = pm || curYM(); } }
     });
+    { const hl = Object.entries(hesapUyari); if (hl.length) uyari.push(t("{n} satırın hesabı defterdeki hesaplarla eşleştirilemedi ya da birden fazla hesapla eşleşti ({liste}); bu satırlar nakit kasaya ya da varsayılan karta yazılacak. Önizlemeyi kontrol edin; gerekirse önce hesabı ekleyip dosyayı yeniden yükleyin.", { n: hl.reduce((a, x) => a + x[1], 0), liste: hl.slice(0, 6).map(x => "“" + x[0] + "”").join(", ") + (hl.length > 6 ? "…" : "") })); }
     const ok = []; let dup = 0;
     all.forEach(r => { if (have.has(keyOf(r))) { dup++; return; } ok.push(r); });
-    I.parsed = { ok, skip, dup, devir, devirMonth };
-    if (I.setOp == null) I.setOp = devir != null && S.set.opening == null;
+    // entries already in the book that are older than the day the opening cash would be counted on: they would be counted twice, so the box does not come ticked
+    const oncekiKayit = devir != null && S.items.some(e => e.date && e.date < devirMonth + "-01");
+    if (I.setOp == null) I.setOp = devir != null && S.set.opening == null && !(S.set.closed || []).length && !oncekiKayit;
+    // rows dated before the opening day are not added (the opening cash was counted on that day: they would be counted twice, K.degisiklikEngeli "acilis")
+    const acilis = I.setOp && devir != null ? devirMonth + "-01" : S.set.openingDate || "";
+    const sonra = acilis ? ok.filter(r => r.date >= acilis) : ok, acilisOnce = ok.length - sonra.length;
+    const ka = K.kapaliAyikla(S.set, sonra);   // rows in a closed month are not added
+    I.parsed = { ok: ka.acik, skip, dup, devir, devirMonth, kapali: ka.kapali.length, oncekiKayit, acilisOnce, acilis, doviz, dovizKod, uyari, atlanan, toplamAtla };
   }
-  function loadSingle(name) { const I = S.imp; I.raw = I.wb.Sheets[name] || []; I.hdr = detectHeader(I.raw); I.headers = headersOf(I.raw, I.hdr); I.map = guessMap(I.headers); }
+  function loadSingle(name) { const I = S.imp; I.raw = I.wb.Sheets[name] || []; I.hdr = detectHeader(I.raw); I.headers = headersOf(I.raw, I.hdr); I.map = mapFor(name, I.raw, I.hdr); }
   async function handleFile(f) {
     if (!f) return;
     try {
@@ -558,13 +779,13 @@
     const I = S.imp, rows = I.parsed.ok; if (I.busy) return;
     I.busy = true; render();
     try {
-      if (I.setOp && I.parsed.devir != null) { S.set.opening = I.parsed.devir; S.set.openingDate = I.parsed.devirMonth + "-01"; await persistSettings(); }
+      if (I.setOp && I.parsed.devir != null && !(S.set.closed || []).length) { S.set.opening = I.parsed.devir; S.set.openingDate = I.parsed.devirMonth + "-01"; await persistSettings(); }
       const stamp = new Date().toISOString();
       const recs = rows.map((r, i) => Object.assign({ id: newId() + i.toString(36), createdAt: stamp, updatedAt: stamp, ord: i, src: "excel" }, r));
       if (recs.length) { await op({ islem: "toplu", kayitlar: recs }); S.items.push(...recs); }
       const lastM = recs.map(r => r.date.slice(0, 7)).sort().pop();
       S.imp = null; S.tab = "list"; if (lastM) S.period = lastM; render();
-      toast(t("{n} kayıt eklendi ve kaydedildi.", { n: recs.length }));
+      toast(t("{n} kayıt eklendi ve kaydedildi.", { n: recs.length }) + (I.parsed.kapali ? " " + t("{n} satır kapatılmış döneme ait olduğu için atlandı.", { n: I.parsed.kapali }) : ""));
     } catch (e) { I.busy = false; fail(e, t("İçe aktarılamadı")); }
   }
 
@@ -588,18 +809,37 @@
     if (!ps.length) return "";
     return '<div class="quick"><span class="ql">' + esc(t("Sık kullanılanlar · dokunun, bilgiler dolsun")) + '</span>' + ps.map(e => '<button type="button" class="qchip" data-quick="' + esc(e.id) + '">' + esc(e.vendor || e.desc) + (e.vendor && e.desc ? ' <small>· ' + esc(e.desc) + '</small>' : "") + ' <small>' + esc(e.cur && e.cur !== "TRY" ? fx(e.fxAmount, e.cur) : tl(e.amount)) + '</small></button>').join("") + '</div>';
   }
-  function lastPay(type) { const inn = type === "in"; const s = S.items.filter(e => isIn(e) === inn && e.pay).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")); return s[0] ? s[0].pay : (inn ? "havale" : "nakit"); }
+  function lastPay(type) { const s = S.items.filter(e => isIn(e) && e.pay).sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || "")); return s[0] ? s[0].pay : "havale"; }
   // How the money moved: a receipt is paid in cash or by card; money coming in arrives by bank transfer, EFT or cash.
   const PAYS = type => type === "in" ? [["havale", t("Havale")], ["eft", t("EFT")], ["nakit", t("Nakit")]] : [["nakit", t("Nakit")], ["kart", t("Kart")]];
-  function payHTML(type, payV) {
-    const ops = PAYS(type); if (!ops.some(o => o[0] === payV)) payV = lastPay(type);
-    const lbl = type === "in" ? t("Nasıl geldi?") : t("Ödeme şekli");
-    return '<p class="seglbl" style="margin-bottom:4px">' + esc(lbl) + '</p><div class="seg" role="radiogroup" aria-label="' + esc(lbl) + '">' + ops.map(([v, l]) => '<label><input type="radio" name="pay" value="' + v + '"' + (payV === v ? " checked" : "") + '><span>' + esc(l) + '</span></label>').join("") + '</div>';
+  // where the money came from / went to: the account (cash box, a card, the bank…); money coming in also says how it arrived
+  function payHTML(type, payV, v) {
+    v = v || {};
+    const hs = v.hesap || (v.id ? K.hesapOf(v) : sonHesap(type));
+    const sec = (id, lbl, val, haric) => '<div class="field full"><label for="' + id + '">' + esc(lbl) + '</label><select id="' + id + '">' + hesapSecenek(val, haric) + '</select></div>';
+    if (type === "tr") {
+      const hd = v.hedef || (hs === "nakit" ? "" : "nakit");
+      return '<div class="grid2">' + sec("f_hesap", t("Nereden"), hs === hd ? "banka" : hs) + sec("f_hedef", t("Nereye"), hd || "nakit") + '</div>';
+    }
+    if (type === "iade") {
+      const son = S.items.filter(e => K.isOut(e) && (e.date || "") >= addMonth(curYM(), -6) + "-01").sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 80);
+      return sec("f_hesap", t("Para hangi hesaba döndü?"), hs) +
+        '<div class="field full"><label for="f_iadeOf">' + esc(t("Hangi harcamanın iadesi? (isteğe bağlı)")) + '</label><select id="f_iadeOf"><option value="">—</option>' + son.map(e => '<option value="' + esc(e.id) + '"' + (e.id === v.iadeOf ? " selected" : "") + '>' + esc(dmy(e.date) + " · " + (e.vendor || e.desc || "") + " · " + tl(e.amount)) + '</option>').join("") + '</select></div>';
+    }
+    if (type === "in") {
+      const ops = PAYS("in"); if (!ops.some(o => o[0] === payV)) payV = lastPay("in");
+      return '<p class="seglbl" style="margin-bottom:4px">' + esc(t("Nasıl geldi?")) + '</p><div class="seg" role="radiogroup" aria-label="' + esc(t("Nasıl geldi?")) + '">' + ops.map(([x, l]) => '<label><input type="radio" name="pay" value="' + x + '"' + (payV === x ? " checked" : "") + '><span>' + esc(l) + '</span></label>').join("") + '</div>' +
+        sec("f_hesap", t("Hangi hesaba girdi?"), v.id ? hs : (v.hesap || "nakit"));
+    }
+    return sec("f_hesap", t("Ödeme kaynağı (nakit, kart, banka…)"), hs);
   }
   const formMetin = type => type === "in"
     ? { kim: t("Kimden geldi (donatan / armatör)"), kimOrn: t("Örn. Armatör"), acOrn: t("Örn. Kasa avansı") }
+    : type === "tr" ? { kim: t("Kim yaptı (isteğe bağlı)"), kimOrn: t("Örn. Kaptan"), acOrn: t("Örn. Bankadan kasaya nakit çekim") }
+    : type === "iade" ? { kim: t("Şirket / satıcı"), kimOrn: t("Örn. market, akaryakıt istasyonu"), acOrn: t("Örn. Ürün iadesi") }
     : { kim: t("Şirket / satıcı"), kimOrn: t("Örn. market, akaryakıt istasyonu"), acOrn: t("Örn. Su ve yoğurt") };
-  const sheetTitle = (editing, inn, copy) => editing ? (inn ? t("Gelen parayı düzenle") : t("Fişi düzenle")) : (inn ? t("Kasaya para ekle") : copy ? t("Fişi kopyala") : t("Yeni fiş"));
+  const sheetTitle = (editing, inn, copy, type) => type === "tr" ? (editing ? t("Transferi düzenle") : t("Hesaplar arası transfer")) : type === "iade" ? (editing ? t("İadeyi düzenle") : t("İade kaydı")) : editing ? (inn ? t("Gelen parayı düzenle") : t("Fişi düzenle")) : (inn ? t("Kasaya para ekle") : copy ? t("Fişi kopyala") : t("Yeni fiş"));
+  const TURLER = () => [["out", t("Harcama")], ["in", t("Gelen para")], ["tr", t("Transfer")], ["iade", t("İade")]];
   function openSheet(id, presetType, copyFrom) {
     if (mustAccept()) return;
     const it = id ? S.items.find(x => x.id === id) : null; if (id && !it) return;
@@ -608,61 +848,82 @@
     const defDate = ym === curYM() ? todayISO() : (ym < curYM() ? ym + "-01" : todayISO());
     const v = src ? Object.assign({}, src) : { type: presetType || "out", vendor: "", desc: "", cat: "", amount: "", note: "" };
     if (!it) v.date = copyFrom ? todayISO() : defDate;
-    const cur = v.cur || "TRY";
-    const amountShown = v.amount === "" ? "" : (cur !== "TRY" && +v.fxAmount > 0 ? num(v.fxAmount) : num(v.amount));
-    const rate = cur !== "TRY" ? (v.fxRate || (S.set.rates || {})[cur] || "") : "";
-    const payV = it ? (it.pay || "") : (v.pay || lastPay(v.type || "out"));
+    const PB = K.paraKodu(), cur = K.CUR[v.cur] ? v.cur : PB;
+    const amountShown = v.amount === "" ? "" : (cur !== PB && +v.fxAmount > 0 ? num(v.fxAmount) : num(v.amount));
+    const hk = cur !== PB && !v.fxRate ? K.hatirlananKur(S.set, cur) : null;   // remembered rate of this book's currency, with its own date and source
+    const rate = cur !== PB ? (v.fxRate || (hk && hk.kur) || "") : "";
+    S.fxKaynak = cur === PB ? null : v.fxRate ? { kaynak: v.fxSource || "elle", tarih: v.fxDate || (v.fxSource ? "" : v.date || "") } : hk ? { kaynak: hk.kaynak, tarih: hk.tarih } : null;
+    const payV = it ? (it.pay || "") : (v.pay || lastPay("in"));
     const fm = formMetin(v.type || "out");
     const vendors = [...new Set(S.items.map(i => i.vendor).filter(Boolean))].slice(0, 400);
-    const showLt = v.type !== "in" && (v.cat === "Yakıt" || +v.lt > 0 || K.guessCat(v.vendor, v.desc) === "Yakıt");
+    const ty = v.type || "out";
+    const showLt = ty === "out" && (v.cat === "Yakıt" || +v.lt > 0 || K.guessCat(v.vendor, v.desc) === "Yakıt");
     S.ph = { id: it && it.photo || null, blob: null, preview: null, removed: false };
     $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><form class="sheet" id="form" role="dialog" aria-modal="true" aria-labelledby="sh" novalidate>' +
-      '<h3 id="sh">' + esc(sheetTitle(!!it, v.type === "in", !!copyFrom)) + '</h3>' +
+      '<h3 id="sh">' + esc(sheetTitle(!!it, v.type === "in", !!copyFrom, ty)) + '</h3>' +
       '<div id="quickBox">' + (it ? "" : quickHTML(v.type || "out")) + '</div>' +
-      '<div class="seg" role="radiogroup" aria-label="' + esc(t("Kayıt türü")) + '" style="margin-bottom:14px"><label><input type="radio" name="ty" value="out"' + (v.type !== "in" ? " checked" : "") + '><span>' + esc(t("Harcama")) + '</span></label><label><input type="radio" name="ty" value="in"' + (v.type === "in" ? " checked" : "") + '><span>' + esc(t("Gelen para")) + '</span></label></div>' +
+      '<div class="seg turseg" role="radiogroup" aria-label="' + esc(t("Kayıt türü")) + '" style="margin-bottom:14px">' + TURLER().map(([x, l]) => '<label><input type="radio" name="ty" value="' + x + '"' + (ty === x ? " checked" : "") + '><span>' + esc(l) + '</span></label>').join("") + '</div>' +
       '<div class="grid2">' +
-      '<div class="field"><label for="f_amount" id="amtLbl">' + esc(t("Tutar")) + '</label><div class="amtline">' + numBox("f_amount", amountShown, 2) + ' placeholder="' + esc(num(0)) + '"><select id="f_cur" class="cursel" aria-label="' + esc(t("Para birimi")) + '">' + Object.keys(K.CUR).map(c => '<option value="' + c + '"' + (c === cur ? " selected" : "") + '>' + K.CUR[c].sym + ' ' + c + '</option>').join("") + '</select></div></div>' +
+      '<div class="field"><label for="f_amount" id="amtLbl">' + esc(t("Tutar")) + '</label><div class="amtline">' + numBox("f_amount", amountShown, 2) + ' placeholder="' + esc(num(0)) + '"><select id="f_cur" class="cursel" aria-label="' + esc(t("Para birimi")) + '">' + K.PARALAR.map(c => '<option value="' + c + '"' + (c === cur ? " selected" : "") + '>' + esc(K.CUR[c].sym === c ? c : K.CUR[c].sym + ' ' + c) + '</option>').join("") + '</select></div></div>' +
       '<div class="field"><label for="f_date">' + esc(t("Tarih")) + '</label><input id="f_date" type="date" value="' + esc(v.date) + '"></div>' +
-      '<div class="field full" id="rateWrap"' + (cur === "TRY" ? " hidden" : "") + '><label for="f_rate" id="rateLbl">' + esc(t("Kur (1 {cur} = ? ₺)", { cur })) + '</label>' + numBox("f_rate", K.dec(rate), 4) + ' placeholder="' + esc(t("Örn. 37,85")) + '"><div class="fxline" id="fxLine"></div></div>' +
+      '<div class="field full" id="rateWrap"' + (cur === PB ? " hidden" : "") + '><label for="f_rate" id="rateLbl">' + esc(K.tp("Kur (1 {cur} = ? ₺)", { cur })) + '</label>' + numBox("f_rate", K.dec(rate), 4) + ' placeholder="' + esc(t("Örn. 37,85")) + '"><div class="fxline" id="fxLine"></div><div class="fxline" id="fxResmi"></div></div>' +
       '<div class="field full"><label for="f_vendor" id="vendLbl">' + esc(fm.kim) + '</label><input id="f_vendor" list="vendlist" maxlength="120" autocomplete="off" value="' + esc(v.vendor) + '" placeholder="' + esc(fm.kimOrn) + '"><datalist id="vendlist">' + vendors.map(c => '<option value="' + esc(c) + '">').join("") + '</datalist></div>' +
       '<div class="field full"><label for="f_desc">' + esc(t("Açıklama")) + '</label><input id="f_desc" maxlength="200" autocomplete="off" value="' + esc(v.desc) + '" placeholder="' + esc(fm.acOrn) + '"></div>' +
-      '<div class="field" id="catWrap"' + (v.type === "in" ? " hidden" : "") + '><label for="f_cat">' + esc(t("Kategori")) + '</label><input id="f_cat" list="catlist" autocomplete="off" value="' + esc(K.catLabel(v.cat)) + '" placeholder="' + esc(t("Kendiliğinden önerilir")) + '"><datalist id="catlist">' + allCats().map(c => '<option value="' + esc(K.catLabel(c)) + '">').join("") + '</datalist></div>' +
+      '<div class="field" id="catWrap"' + (ty === "in" || ty === "tr" ? " hidden" : "") + '><label for="f_cat">' + esc(t("Kategori")) + '</label><input id="f_cat" list="catlist" autocomplete="off" value="' + esc(K.catLabel(v.cat)) + '" placeholder="' + esc(t("Kendiliğinden önerilir")) + '"><datalist id="catlist">' + allCats().map(c => '<option value="' + esc(K.catLabel(c)) + '">').join("") + '</datalist></div>' +
       '<div class="field" id="ltWrap"' + (showLt ? "" : " hidden") + '><label for="f_lt">' + esc(t("Yakıt (litre)")) + '</label>' + numBox("f_lt", +v.lt > 0 ? K.qty(v.lt) : "", 2) + ' placeholder="' + esc(t("Örn. 900")) + '"><div class="fxline" id="ltLine"></div></div>' +
-      '<div class="full" id="payWrap">' + payHTML(v.type || "out", payV) + '</div>' +
+      '<div class="full" id="payWrap">' + payHTML(ty, payV, it || copyFrom ? v : null) + '</div>' +
       '<div class="field full"><label for="f_note">' + esc(t("Not")) + '</label><textarea id="f_note" maxlength="1000">' + esc(v.note) + '</textarea></div>' +
       '<div class="field full"><label>' + esc(t("Fiş fotoğrafı")) + ' <span style="font-weight:400">' + esc(t("(isteğe bağlı)")) + '</span></label><div class="ph" id="phBox">' + phBoxHTML() + '</div></div>' +
+      (it ? K.gecmis.formHTML(it, { hesapAd }) : "") +
       '</div><div class="err-t" id="ferr"></div>' +
       '<div class="acts">' + (it ? '<button type="button" class="btn danger" id="delBtn" data-id="' + esc(it.id) + '">' + esc(t("Sil")) + '</button><button type="button" class="btn" id="copyBtn" data-id="' + esc(it.id) + '">' + esc(t("Bugüne kopyala")) + '</button>' : "") + '<div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Vazgeç")) + '</button><button type="submit" class="btn pri" id="saveBtn">' + esc(t("Kaydet")) + '</button></div></div>' +
       '</form></div>';
     S.editing = it ? it.id : null; S.catTouched = !!(src && src.cat);
-    updFx(); updLt();
+    updFx(); updLt(); resmiKur();
     // put the cursor in the amount box, unless the user has already moved into the form
     setTimeout(() => { const f = document.getElementById("f_amount"), a = document.activeElement; if (f && !(a && a.closest && a.closest("#form"))) { f.focus(); f.select(); } }, 30);
   }
   function fillFrom(e) {
     const g = id => document.getElementById(id);
-    const cur = e.cur || "TRY";
+    const PB = K.paraKodu(), cur = K.CUR[e.cur] ? e.cur : PB;
     g("f_cur").value = cur;
-    g("f_amount").value = cur !== "TRY" && +e.fxAmount > 0 ? num(e.fxAmount) : num(e.amount);
-    if (cur !== "TRY") g("f_rate").value = K.dec((S.set.rates || {})[cur] || e.fxRate || "");
+    g("f_amount").value = cur !== PB && +e.fxAmount > 0 ? num(e.fxAmount) : num(e.amount);
+    if (cur !== PB) { const hk = K.hatirlananKur(S.set, cur); g("f_rate").value = K.dec(hk ? hk.kur : e.fxRate || ""); S.fxKaynak = hk ? { kaynak: hk.kaynak, tarih: hk.tarih } : e.fxRate ? { kaynak: e.fxSource || "elle", tarih: e.fxDate || "" } : null; }
     g("f_vendor").value = e.vendor || ""; g("f_desc").value = e.desc || "";
-    if (!isIn(e)) { g("f_cat").value = K.catLabel(e.cat); S.catTouched = !!e.cat; const p = document.querySelector('input[name="pay"][value="' + (e.pay || lastPay()) + '"]'); if (p) p.checked = true; g("f_lt").value = ""; }
-    g("rateWrap").hidden = cur === "TRY";
+    if (!isIn(e)) { g("f_cat").value = K.catLabel(e.cat); S.catTouched = !!e.cat; const hs = g("f_hesap"), id = K.hesapOf(e), h = K.hesapBul(S.set, id); if (hs && h && h.durum === "aktif") hs.value = id; g("f_lt").value = ""; }
+    g("rateWrap").hidden = cur === PB;
     g("ltWrap").hidden = !(!isIn(e) && (e.cat === "Yakıt" || +e.lt > 0));
-    updFx(); updLt(); g("f_amount").focus(); g("f_amount").select();
+    updFx(); updLt(); resmiKur(); g("f_amount").focus(); g("f_amount").select();
   }
   function updFx() {
     const g = id => document.getElementById(id); if (!g("f_cur")) return;
-    const cur = g("f_cur").value; g("rateWrap").hidden = cur === "TRY";
-    g("amtLbl").textContent = cur === "TRY" ? t("Tutar (₺)") : t("Tutar ({sym})", { sym: K.CUR[cur].sym });
-    if (g("rateLbl")) g("rateLbl").textContent = t("Kur (1 {cur} = ? ₺)", { cur });
+    const PB = K.paraKodu(), cur = g("f_cur").value; g("rateWrap").hidden = cur === PB;
+    g("amtLbl").textContent = t("Tutar ({sym})", { sym: K.paraSym(cur) });
+    if (g("rateLbl")) g("rateLbl").textContent = K.tp("Kur (1 {cur} = ? ₺)", { cur });
     const a = toNum(g("f_amount").value), r = toNum(g("f_rate").value);
     const ty = (document.querySelector('input[name="ty"]:checked') || {}).value;
-    g("fxLine").innerHTML = cur !== "TRY" && a > 0 && r > 0 ? '= <b>' + tl(a * r) + '</b> ' + esc(ty === "in" ? t("kasaya girer") : t("kasadan düşer")) : (cur !== "TRY" ? esc(t("Kuru girin; tutar TL’ye çevrilip kasaya işlenir.")) : "");
+    const kz = S.fxKaynak && r > 0 ? " · " + (S.fxKaynak.kaynak === "elle" ? t("elle girilen kur") : S.fxKaynak.kaynak) + (S.fxKaynak.tarih ? " " + dmy(S.fxKaynak.tarih) : "") : "";
+    g("fxLine").innerHTML = cur !== PB && a > 0 && r > 0 ? '= <b>' + tl(a * r) + '</b> ' + esc(ty === "in" || ty === "iade" ? t("hesaba girer") : ty === "tr" ? t("aktarılır") : t("hesaptan düşer")) + esc(kz) : (cur !== PB ? esc(t("Kuru girin; tutar defterin para birimine ({para}) çevrilip hesaba işlenir.", { para: PB })) : "");
+  }
+  // the official rate for the chosen currency (TCMB for a lira book, ECB for others): fills an empty rate box, otherwise offered with a button
+  async function resmiKur() {
+    const g = id => document.getElementById(id); if (!g("f_cur")) return;
+    const PB = K.paraKodu(), cur = g("f_cur").value, kutu = g("fxResmi"); if (!kutu) return;
+    kutu.innerHTML = "";
+    if (cur === PB) return;
+    try {
+      if (!S.paraKur || S.paraKur.baz !== PB || Date.now() - S.paraKurZ > 1800e3) { const y = K.kurlarFor(await api("api/kur?para=" + PB), PB); if (y) { S.paraKur = y; S.paraKurZ = Date.now(); } }
+    } catch (e) { return; }
+    const y = S.paraKur, k = y && y.baz === PB && y.kurlar[cur]; if (!k || !g("f_cur") || g("f_cur").value !== cur) return;
+    const fr = g("f_rate");
+    if (!fr.value) { fr.value = K.dec(k); S.fxKaynak = { kaynak: y.kaynak, tarih: y.tarih }; updFx(); updLt(); return; }
+    if (toNum(fr.value) === k) return;
+    kutu.innerHTML = esc(t("{kaynak} kuru {tarih}: 1 {cur} = {kur} {para}", { kaynak: y.kaynak, tarih: y.tarih ? dmy(y.tarih) : "", cur, kur: K.kurStr(k), para: PB })) + ' <button type="button" class="btn sm" id="resmiKullan">' + esc(t("Bu kuru kullan")) + '</button>';
+    g("resmiKullan").onclick = () => { fr.value = K.dec(k); S.fxKaynak = { kaynak: y.kaynak, tarih: y.tarih }; kutu.innerHTML = ""; updFx(); updLt(); };
   }
   function updLt() {
     const g = id => document.getElementById(id); if (!g("f_lt")) return;
-    const lt = toNum(g("f_lt").value), cur = g("f_cur").value, a = toNum(g("f_amount").value), r = cur === "TRY" ? 1 : toNum(g("f_rate").value);
+    const lt = toNum(g("f_lt").value), cur = g("f_cur").value, a = toNum(g("f_amount").value), r = cur === K.paraKodu() ? 1 : toNum(g("f_rate").value);
     g("ltLine").textContent = lt > 0 && a > 0 && r > 0 ? K.perL(a * r / lt) : "";
   }
   function closeSheet() { if (mustAccept()) return; $("#sheetHost").innerHTML = ""; S.editing = null; S.terms = null; if (S.ph && S.ph.preview) URL.revokeObjectURL(S.ph.preview); S.ph = null; if (S._pending) { S._pending = false; render(); } }
@@ -670,19 +931,26 @@
     const g = id => document.getElementById(id);
     const type = document.querySelector('input[name="ty"]:checked').value;
     const cur = g("f_cur").value;
-    const typed = toNum(g("f_amount").value), rate = cur === "TRY" ? 1 : toNum(g("f_rate").value);
+    const PB = K.paraKodu(), typed = toNum(g("f_amount").value), rate = cur === PB ? 1 : toNum(g("f_rate").value);
     const date = g("f_date").value, vendor = g("f_vendor").value.trim(), desc = g("f_desc").value.trim();
     const err = g("ferr");
     if (isNaN(typed) || typed <= 0) { err.textContent = t("Tutarı rakamla yazın, ör. {ornek}", { ornek: boxText(1250.5, 2) }); g("f_amount").focus(); return; }
-    if (cur !== "TRY" && !(rate > 0)) { err.textContent = t("Kuru yazın, ör. {ornek}", { ornek: K.dec(37.85) }); g("f_rate").focus(); return; }
+    if (cur !== PB && !K.kurGecerli(rate)) { err.textContent = t("Kuru yazın, ör. {ornek}", { ornek: K.dec(37.85) }); g("f_rate").focus(); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { err.textContent = t("Tarih seçin."); g("f_date").focus(); return; }
-    if (!vendor && !desc) { err.textContent = t("Şirket ya da açıklama yazın."); g("f_vendor").focus(); return; }
+    const hesap = g("f_hesap") ? g("f_hesap").value : "nakit", hedef = g("f_hedef") ? g("f_hedef").value : "";
+    if (type === "tr" && (!hedef || hedef === hesap)) { err.textContent = t("Transfer için iki farklı hesap seçin."); (g("f_hedef") || g("f_hesap")).focus(); return; }
+    if (!vendor && !desc && type !== "tr") { err.textContent = t("Şirket ya da açıklama yazın."); g("f_vendor").focus(); return; }
     const old = S.editing ? S.items.find(x => x.id === S.editing) : null;
+    const eng = K.degisiklikEngeli(S.set, old, { date }); if (eng) { err.textContent = engelMesaji(eng); g("f_date").focus(); return; }
     const now = new Date().toISOString();
-    const body = { id: old ? old.id : newId(), type, date, vendor, desc, cat: type === "in" ? "" : (K.catKey(g("f_cat").value) || K.guessCat(vendor, desc)), amount: r2(typed * rate), note: g("f_note").value.trim(), createdAt: old ? old.createdAt || now : now, updatedAt: K.damga(old && old.updatedAt) };
+    const body = { id: old ? old.id : newId(), type, date, vendor, desc, cat: type === "in" || type === "tr" ? "" : (K.catKey(g("f_cat").value) || K.guessCat(vendor, desc)), amount: 0, hesap, note: g("f_note").value.trim(), createdAt: old ? old.createdAt || now : now, updatedAt: K.damga(old && old.updatedAt) };
     if (old && old.src) body.src = old.src; if (old && old.ord != null) body.ord = old.ord;
-    if (cur !== "TRY") { body.cur = cur; body.fxAmount = r2(typed); body.fxRate = rate; }
-    { const p = document.querySelector('input[name="pay"]:checked'); if (p) body.pay = p.value; }
+    const fk = S.fxKaynak || {};
+    Object.assign(body, K.dovizAlanlari(typed, cur, rate, fk.kaynak || "elle", fk.tarih != null ? fk.tarih : date));
+    if (type === "in") { const p = document.querySelector('input[name="pay"]:checked'); if (p) body.pay = p.value; }
+    if (type === "out") body.pay = K.hesapTur(S.set, hesap) === "kart" ? "kart" : "nakit";   // older versions read the payment method
+    if (type === "tr") { body.hedef = hedef; if (!desc) body.desc = t("Transfer"); }
+    if (type === "iade") { const io = g("f_iadeOf") && g("f_iadeOf").value; if (io) { body.iadeOf = io; const o = S.items.find(x => x.id === io); if (o && !body.cat) body.cat = o.cat || ""; } }
     if (type === "out") { const lt = toNum(g("f_lt").value); if (lt > 0 && !g("ltWrap").hidden) body.lt = lt; }
     const sb = g("saveBtn"); sb.disabled = true; sb.textContent = t("Kaydediliyor…");
     const before = curBalance();
@@ -692,15 +960,16 @@
       else if (S.ph.id && !S.ph.removed) body.photo = S.ph.id;
       else if (old && old.photo && S.ph.removed) oldPhoto = old.photo;
       sb.textContent = t("Kaydediliyor…");
+      if (old) K.gecmis.izle(old, body, kimBu());   // change history: the fields that changed, their earlier values
       await persistEntry(body);
       if (old) Object.keys(old).forEach(k => delete old[k]), Object.assign(old, body); else S.items.push(body);
       if (oldPhoto) api("api/foto/" + oldPhoto, { method: "DELETE" }).catch(() => { });
-      if (cur !== "TRY" && (S.set.rates || {})[cur] !== rate) { S.set.rates = Object.assign({}, S.set.rates, { [cur]: rate }); persistSettings().catch(() => { }); }
+      if (cur !== PB) { const hk = K.hatirlananKur(S.set, cur); if (!hk || hk.kur !== rate || hk.kaynak !== body.fxSource || hk.tarih !== (body.fxDate || "")) { Object.assign(S.set, K.kurHatirla(S.set, cur, rate, body.fxSource, body.fxDate)); persistSettings().catch(() => { }); } }
       const after = curBalance();
-      const msg = [old ? t("Değişiklik kaydedildi.") : (type === "in" ? t("Gelen para kaydedildi.") : t("Fiş kaydedildi."))];
+      const msg = [old ? t("Değişiklik kaydedildi.") : (type === "in" ? t("Gelen para kaydedildi.") : type === "tr" ? t("Transfer kaydedildi.") : type === "iade" ? t("İade kaydedildi.") : t("Fiş kaydedildi."))];
       if (!old) {
         if (type === "in" && before < 0) msg.push(after >= 0 ? t("Kasa açığı kapandı, kasada {tutar} var.", { tutar: tl(after) }) : t("Açık {tutar} kaldı.", { tutar: tl(-after) }));
-        else if (type === "out" && after < 0 && before >= 0) msg.push(t("Kasa eksiye düştü: {tutar}.", { tutar: tl(after) }));
+        else if (type === "out" && after < 0 && before >= 0 && nakitMi(hesap)) msg.push(t("Kasa eksiye düştü: {tutar}.", { tutar: tl(after) }));
         else if (type === "out" && after >= 0 && +S.set.lowLimit > 0 && after < +S.set.lowLimit && before >= +S.set.lowLimit) msg.push(t("Kasa uyarı sınırının altına indi: {tutar}.", { tutar: tl(after) }));
       }
       const ym = date.slice(0, 7); const moved = S.period !== "all" && ym !== S.period;
@@ -709,16 +978,45 @@
       toast(msg.join(" "));
     } catch (e) { sb.disabled = false; sb.textContent = t("Kaydet"); err.textContent = e.message || t("Kaydedilemedi."); }
   }
+  // why an entry cannot be saved or deleted (K.degisiklikEngeli), in words
+  const engelMesaji = x => x.kod === "kapali" ? t("{ay} dönemi kapatıldı. Önce dönemi yeniden açın.", { ay: monthLabel(x.ay) })
+    : t("Bu tarih başlangıç tarihinden ({tarih}) önce. Başlangıç kasası o günkü sayımdır; daha eski bir kayıt devri bozar. Tarihi düzeltin ya da Ayarlar’da başlangıç tarihini değiştirin.", { tarih: dmy(x.tarih) });
+  // the opening cash and its date are the base of every carry-over: with a closed month they are not changed (the month must be reopened first), as for an entry (K.degisiklikEngeli "kapali")
+  function acilisEngeli(op, tarih) {
+    const kap = (S.set.closed || []).slice().sort()[0]; if (!kap) return null;
+    const ac = (op == null ? null : r2(op)) !== (S.set.opening == null ? null : r2(S.set.opening)), ta = (tarih || null) !== (S.set.openingDate || null);
+    return ac || ta ? { kod: "kapali", ay: kap } : null;
+  }
   async function delItem(btn) {
+    { const eng = K.degisiklikEngeli(S.set, S.items.find(x => x.id === btn.dataset.id), null); if (eng) { $("#ferr").textContent = engelMesaji(eng); return; } }
     if (!btn.classList.contains("arm")) { btn.classList.add("arm"); btn.textContent = t("Silmek için tekrar tıklayın"); return; }
     const id = btn.dataset.id; btn.disabled = true;
-    const it = S.items.find(x => x.id === id) || {}, ph = it.photo, zaman = K.damga(it.updatedAt || it.createdAt);
+    const it = S.items.find(x => x.id === id) || {}, zaman = K.damga(it.updatedAt || it.createdAt);
+    const arsiv = it.id ? K.gecmis.arsivKaydi(it, zaman, kimBu()) : null;   // kept 400 days, can be restored (the photo stays for it)
     try {
-      await op({ islem: "sil", id, zaman });
-      S.items = S.items.filter(x => x.id !== id); S.silinenler[id] = zaman;
-      if (ph) api("api/foto/" + ph, { method: "DELETE" }).catch(() => { });
+      await op({ islem: "sil", id, zaman, arsiv });
+      S.items = S.items.filter(x => x.id !== id); S.silinenler[id] = zaman; if (arsiv) S.silinenKayitlar[id] = arsiv;
       closeSheet(); render(); toast(t("Kayıt silindi."));
     } catch (e) { btn.disabled = false; $("#ferr").textContent = e.message; }
+  }
+  /* ---------------- deleted entries (gecmis.js): list and restore ---------------- */
+  const silinenBtn = () => { const n = K.gecmis.arsivListesi(S.silinenKayitlar).length; return n ? '<button type="button" class="btn" data-silinenler>' + esc(t("Silinen kayıtlar ({n})", { n })) + '</button>' : ""; };
+  function openSilinenler() {
+    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh"><h3 id="sh">' + esc(t("Silinen kayıtlar")) + '</h3>' + K.gecmis.arsivHTML(S.silinenKayitlar, { isClosed }) +
+      '<div class="acts"><div class="r"><button type="button" class="btn pri" id="closeSheet">' + esc(t("Kapat")) + '</button></div></div></div></div>';
+  }
+  async function geriYukle(btn) {
+    const id = btn.dataset.geriyukle, x = S.silinenKayitlar[id]; if (!x) return;
+    if (!K.gecmis.paraUyar(x, K.paraKodu())) { toast(t("Bu kayıt {para} ile tutulan defterden silinmiş; para birimi farklı olduğu için geri yüklenemez.", { para: x.para || "TRY" })); return; }
+    { const eng = K.degisiklikEngeli(S.set, null, x.kayit || {}); if (eng) { toast(engelMesaji(eng)); return; } }   // M-3: a closed month or a date before the opening is refused, as for a new entry
+    btn.disabled = true;
+    const k = K.gecmis.geriYukle(x, kimBu());
+    try {
+      await persistEntry(k);
+      delete S.silinenKayitlar[id]; S.items.push(k);
+      openSilinenler(); render();
+      toast(t("Kayıt geri yüklendi."));
+    } catch (e) { btn.disabled = false; toast(e.message); }
   }
   function phBoxHTML() {
     const P = S.ph || {}; const has = (P.preview || P.id) && !P.removed;
@@ -741,10 +1039,12 @@
   /* ---------------- periods ---------------- */
   function openNewPeriod() {
     const last = S.period && S.period !== "all" ? S.period : monthRange()[0], next = addMonth(last, 1), k = kasaFor(last);
-    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh"><h3 id="sh">' + esc(t("{ay} kapanıyor", { ay: monthLabel(last) })) + '</h3><p style="margin:0 0 14px;color:var(--muted)">' + esc(t("Dönem kapandı olarak işaretlenecek ve {ay} açılacak. Kalan kasa yeni ayın devrine kendiliğinden geçer. Kapanan aya sonradan fiş girerseniz devir de kendiliğinden düzelir.", { ay: monthLabel(next) })) + '</p><div class="closebox"><span>' + esc(t("Devir kasa")) + '</span><span class="v">' + tl(k.devir) + '</span><span>' + esc(t("Gelen para")) + '</span><span class="v" style="color:var(--ok)">' + tl(k.in) + '</span><span>' + esc(t("Toplam harcama")) + '</span><span class="v">' + tl(k.out) + '</span><span class="tot">' + esc(t("{ay} devri", { ay: monthLabel(next) })) + '</span><span class="v tot">' + tl(k.kalan) + '</span></div><div class="acts"><div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Vazgeç")) + '</button><button type="button" class="btn pri" id="confirmNewP" data-m="' + next + '" data-close="' + last + '">' + esc(t("Dönemi kapat ve yeni aya geç")) + '</button></div></div></div></div>';
+    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh"><h3 id="sh">' + esc(t("{ay} kapanıyor", { ay: monthLabel(last) })) + '</h3><p style="margin:0 0 14px;color:var(--muted)">' + esc(t("Dönem kapandı olarak işaretlenecek ve {ay} açılacak. Kalan kasa yeni ayın devrine kendiliğinden geçer. Kapanan aya sonradan fiş eklemek ya da düzeltmek için önce dönemi yeniden açmanız gerekir.", { ay: monthLabel(next) })) + '</p><div class="closebox"><span>' + esc(t("Devir kasa")) + '</span><span class="v">' + tl(k.devir) + '</span><span>' + esc(t("Gelen para")) + '</span><span class="v" style="color:var(--ok)">' + tl(k.in) + '</span><span>' + esc(t("Toplam harcama")) + '</span><span class="v">' + tl(k.out) + '</span><span class="tot">' + esc(t("{ay} devri", { ay: monthLabel(next) })) + '</span><span class="v tot">' + tl(k.kalan) + '</span></div><div class="acts"><div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Vazgeç")) + '</button><button type="button" class="btn pri" id="confirmNewP" data-m="' + esc(next) + '" data-close="' + esc(last) + '">' + esc(t("Dönemi kapat ve yeni aya geç")) + '</button></div></div></div></div>';
   }
   async function confirmNewPeriod(btn) {
-    const m = btn.dataset.m, c = btn.dataset.close; btn.disabled = true;
+    const m = btn.dataset.m, c = btn.dataset.close;
+    if (K.paraUyumsuz(S.items, S.set).length) { toast(t("Para birimi uyuşmazlığı giderilmeden dönem kapatılamaz.")); return; }   // R7
+    btn.disabled = true;
     const prev = JSON.stringify(S.set);
     S.set.closed = [...new Set([...(S.set.closed || []), c])].sort();
     if (!S.set.openedThrough || m > S.set.openedThrough) S.set.openedThrough = m;
@@ -781,7 +1081,7 @@
   async function openPath(yol, goster) { try { await api("api/ac", { method: "POST", json: { yol: yol || "", goster: !!goster } }); } catch (e) { toast(e.message); } }
   const BELGE = { kilavuz: { tr: "Kasa-Jurnali-Kullanim-Kilavuzu.pdf", en: "Kasa-Jurnali-User-Guide.pdf" }, yasal: { tr: "Kasa-Jurnali-Kosullar-ve-Gizlilik.pdf", en: "Kasa-Jurnali-Terms-and-Privacy.pdf" } };
   async function openDoc(ad) {
-    if (WEB) { window.open("belgeler/" + (BELGE[ad] || BELGE.kilavuz)[K.lang === "en" ? "en" : "tr"], "_blank"); return; }
+    if (WEB) { window.open("belgeler/" + (BELGE[ad] || BELGE.kilavuz)[K.lang === "tr" ? "tr" : "en"], "_blank"); return; }
     try { await api("api/belge", { method: "POST", json: { ad, dil: K.lang } }); } catch (e) { toast(e.message); }
   }
   async function restoreFile(f) {
@@ -807,17 +1107,22 @@
         const kay = ky.map(e => Object.assign({}, e, { updatedAt: simdi })), yeni = new Set(kay.map(e => e.id));
         const sil = Object.assign({}, S.silinenler, (d.silinenler && typeof d.silinenler === "object") ? d.silinenler : {});
         S.items.forEach(e => { if (!yeni.has(e.id)) sil[e.id] = simdi; }); yeni.forEach(id => { delete sil[id]; });
-        await op({ islem: "geriyukle", defter: { ayarlar: ayar, kayitlar: kay, silinenler: sil } }); closeSheet(); await reload(); toast(t("Yedek yüklendi: {n} kayıt.", { n: ky.length }));
+        await op({ islem: "geriyukle", defter: { ayarlar: ayar, kayitlar: kay, silinenler: sil, silinenKayitlar: K.gecmis.arsivBirlestir(S.silinenKayitlar, d.silinenKayitlar, yeni) } }); closeSheet(); await reload(); toast(t("Yedek yüklendi: {n} kayıt.", { n: ky.length }));
       } catch (e) { toast(e.message); }
     };
   }
 
   // a server message as a sentence: capital first letter, full stop at the end
-  const cumle = m => { m = m.trim(); return m ? m[0].toLocaleUpperCase(K.lang === "en" ? "en" : "tr") + m.slice(1) + (/[.!?]$/.test(m) ? "" : ".") : ""; };
+  const cumle = m => { m = m.trim(); return m ? m[0].toLocaleUpperCase(K.loc) + m.slice(1) + (/[.!?]$/.test(m) ? "" : ".") : ""; };
   /* ---------------- terms of use and privacy (first start and Settings) ---------------- */
   const YASAL = () => window.KJ_YASAL || null;
   const needTerms = () => { const Y = YASAL(); return !!Y && (!S.set.kabul || S.set.kabul.surum !== Y.surum); };
-  function legalHTML(which) { const Y = YASAL(); if (!Y) return ""; const L = Y[K.lang] || Y.tr; return L[which] || ""; }
+  // the legal texts exist in Turkish and English only: the other languages read the English text, with a note that the Turkish one is binding
+  const yasalDil = () => K.lang === "tr" ? "tr" : "en";
+  function legalHTML(which) {
+    const Y = YASAL(); if (!Y) return ""; const L = Y[yasalDil()] || Y.tr, h = L[which] || "";
+    return h && K.lang !== yasalDil() ? '<p class="box" lang="' + K.lang + '">' + esc(K.yasalNot()) + '</p>' + h : h;
+  }
   function openTerms(mode, tab) { S.terms = { mode, tab: tab || "kosullar", c1: false, c2: false }; renderTerms(); }
   function renderTerms() {
     const T = S.terms; if (!T) return;
@@ -827,7 +1132,7 @@
       '<div class="thead"><h3 id="sh">' + esc(acc ? t("Yachting Jurnal’e Hoş Geldiniz") : t("Yasal bilgiler")) + '</h3>' + langSwitchHTML() + '</div>' +
       (acc ? '<p class="lead">' + esc(WEB ? t("Uygulamayı kullanmaya başlamadan önce lütfen aşağıdaki metinleri okuyun. Kayıtlarınız bu telefonda saklanır; Google Drive eşitlemesini siz açmadıkça hiçbir kayıt internete gönderilmez.") : t("Programı kullanmaya başlamadan önce lütfen aşağıdaki metinleri okuyun. Kayıtlarınız bu bilgisayarda saklanır; Google Drive eşitlemesini siz açmadıkça hiçbir kayıt internete gönderilmez.")) + '</p>' : "") +
       '<div class="ttabs" role="tablist">' + tabs.map(([id, l]) => '<button type="button" role="tab" data-ttab="' + id + '" aria-selected="' + (T.tab === id) + '">' + esc(l) + '</button>').join("") + '</div>' +
-      '<div class="legal" id="legalBox" tabindex="0" lang="' + K.lang + '">' + legalHTML(T.tab) + '</div>' +
+      '<div class="legal" id="legalBox" tabindex="0" lang="' + yasalDil() + '">' + legalHTML(T.tab) + '</div>' +
       (acc ? '<div class="accept"><label class="check"><input type="checkbox" id="acc1"' + (T.c1 ? " checked" : "") + '> <span>' + esc(t("Kullanım Koşulları ve Lisans Sözleşmesi’ni okudum ve kabul ediyorum.")) + '</span></label>' +
         '<label class="check"><input type="checkbox" id="acc2"' + (T.c2 ? " checked" : "") + '> <span>' + esc(t("Gizlilik ve Kişisel Veriler Bilgilendirmesi’ni okudum ve anladım.")) + '</span></label></div>'
         : (k && k.tarih ? '<p class="small">' + esc(t("Kullanım Koşulları {tarih} tarihinde kabul edildi (sürüm {surum}).", { tarih: K.dateTime(new Date(k.tarih)), surum: k.surum || "" })) + '</p>' : "")) +
@@ -864,31 +1169,55 @@
       '<label class="opt"><input type="radio" name="fmt" value="pdf" checked><span class="oi">PDF</span><span class="ot"><b>' + esc(t("PDF rapor")) + '</b><span>' + esc(WEB ? t("Kasa raporu açılır; “Yazdır / PDF” ile yazdırabilir ya da PDF olarak paylaşabilirsiniz") : t("Yazdırmaya, e-postayla göndermeye hazır kasa raporu: özet, fiş listesi, anlık kasa, kategori, yakıt ve imza alanları")) + '</span></span></label>' +
       '<label class="opt"><input type="radio" name="fmt" value="xlsx"><span class="oi x">XLS</span><span class="ot"><b>' + esc(t("Excel tablosu")) + '</b><span>' + esc(t("Aylık fiş takip tablosu düzeninde; toplamlar formüllü")) + '</span></span></label></div>' +
       '<p class="seglbl" style="margin:14px 0 4px">' + esc(t("Hangi dönem?")) + '</p><div class="seg" role="radiogroup" aria-label="' + esc(t("Kapsam")) + '">' + (one ? '<label><input type="radio" name="scope" value="period" checked><span>' + esc(monthLabel(S.period)) + '</span></label>' : "") + '<label><input type="radio" name="scope" value="all"' + (one ? "" : " checked") + '><span>' + esc(t("Tüm aylar")) + '</span></label></div>' +
+      (kartVar() ? '<label class="check" style="margin-top:12px" id="kartOpt"><input type="checkbox" id="withKart" checked> <span>' + esc(t("Kart ekstresi ve banka hareketleri")) + '</span></label>' : "") +
+      '<label class="check" style="margin-top:12px" id="konsOpt" hidden><input type="checkbox" id="withKons"> <span>' + esc(t("Tüm tekneler (konsolide)")) + '</span></label>' +
       (anyPhoto ? '<label class="check" style="margin-top:12px" id="photoOpt"><input type="checkbox" id="withPhotos" checked> <span>' + esc(t("Fiş fotoğraflarını rapora ek olarak koy")) + '</span></label>' : "") +
       '<p class="small" style="margin:12px 0 0">' + esc(t("Rapor ve tablo Türkçe hazırlanır. Dili Ayarlar’dan değiştirebilirsiniz.")) + '</p>' +
       '<div class="err-t" id="xerr"></div>' +
       '<div class="acts"><div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Vazgeç")) + '</button><button type="button" class="btn pri" id="runExport">' + esc(t("Raporu oluştur")) + '</button></div></div></div></div>';
+    tekneVerisi().then(x => { const o = $("#konsOpt"); if (o && x && x.tekneler.length > 1) o.hidden = false; });
+  }
+  // reports (konsolide.js): card statements when the book has card/bank movements; several boats when the
+  // multi-boat part provides window.KJ_TEKNELER() (a list, or { sirket, tekneler }); hidden without it
+  const kartVar = () => S.items.some(e => K.isTr(e) || K.hesapTur(S.set, K.hesapOf(e)) !== "nakit");
+  async function tekneVerisi() {
+    try {
+      const f = window.KJ_TEKNELER, x = typeof f === "function" ? await f() : null;
+      const tekneler = Array.isArray(x) ? x : x && Array.isArray(x.tekneler) ? x.tekneler : [];
+      const sirket = (x && !Array.isArray(x) && x.sirket) || (typeof window.KJ_SIRKET === "function" ? await window.KJ_SIRKET() : null) || null;
+      return { tekneler: tekneler.filter(y => y && y.defter), sirket };
+    } catch (e) { return { tekneler: [], sirket: null }; }
   }
   async function runExport(btn) {
     const fmt = document.querySelector('input[name="fmt"]:checked').value, scope = document.querySelector('input[name="scope"]:checked').value;
-    const months = exportMonths(scope);
+    if (!K.ozellikIste(fmt === "pdf" ? "pdf_rapor" : "excel", fmt === "pdf" ? t("PDF rapor") : t("Excel tablosu"))) return;   // paket.js
+    let months = exportMonths(scope);
+    const wk = $("#withKart"), kart = !wk || wk.checked, wkn = $("#withKons"), tv = await tekneVerisi();
+    let kons = null;
+    if (wkn && wkn.checked && tv.tekneler.length > 1) {
+      if (K.ozellikIste && !K.ozellikIste("konsolide_rapor", t("Konsolide rapor"))) return;   // paket.js (Fleet)
+      if (scope === "all" || S.period === "all") months = [...new Set(tv.tekneler.flatMap(x => K.monthsWithData(x.defter.kayitlar || [])))].sort();
+      kons = K.konsolide(tv.tekneler, months);
+    }
+    const ek = { kart, konsolide: kons, sirket: tv.sirket };
+    const sayfalar = () => (kons ? [K.konsolideSayfasi(kons, tv.sirket && tv.sirket.ad)] : []).concat(months.map(sheetSpec), kart ? [K.kartlarSayfasi(S.items, S.set, months)].filter(Boolean) : []);
     if (!months.length) { $("#xerr").textContent = t("Rapora girecek fiş yok."); return; }
     const label = months.length === 1 ? monthLabel(months[0]) : monthLabel(months[0]) + " – " + monthLabel(months[months.length - 1]);
     const base = (S.set.name ? S.set.name + " - " : "");
     btn.disabled = true; btn.textContent = fmt === "pdf" ? t("PDF hazırlanıyor…") : t("Excel hazırlanıyor…");
     if (WEB) {
       try {
-        if (fmt === "pdf") { const wp = $("#withPhotos"); location.href = "rapor?ay=" + encodeURIComponent(months.join(",")) + "&foto=" + (wp && wp.checked ? "1" : "0") + "&dil=" + K.lang; return; }
+        if (fmt === "pdf") { const wp = $("#withPhotos"); let x = ""; try { if (kons || ek.sirket) { sessionStorage.setItem("kj_rapor_ek", JSON.stringify({ konsolide: kons, sirket: ek.sirket })); x = "&ek=1"; } } catch (e) { } location.href = "rapor?ay=" + encodeURIComponent(months.join(",")) + "&foto=" + (wp && wp.checked ? "1" : "0") + (kart ? "" : "&kart=0") + x + "&dil=" + K.lang + "&tekne=" + encodeURIComponent(S.tekne || "ana"); return; }
         const ad = (base + "Yachting Jurnal - " + label).replace(/[\/:*?"<>|]/g, "-") + ".xlsx";
-        const r = await api("api/excel", { method: "POST", raw: true, json: { dosya: ad, dil: K.lang, sayfalar: months.map(sheetSpec) } });
+        const r = await api("api/excel", { method: "POST", raw: true, json: { dosya: ad, dil: K.lang, para: K.paraKodu(), sayfalar: sayfalar() } });
         dosyaHazir(t("Excel dosyası hazır"), ad, await r.blob(), "XLS");
       } catch (e) { btn.disabled = false; btn.textContent = t("Tekrar dene"); $("#xerr").textContent = e.message; }
       return;
     }
     try {
       let r;
-      if (fmt === "pdf") { const wp = $("#withPhotos"); r = await api("api/pdf", { method: "POST", json: { aylar: months, fotograflar: wp ? wp.checked : false, dosya: base + t("Kasa Raporu") + " - " + label, dil: K.lang } }); }
-      else r = await api("api/excel", { method: "POST", json: { dosya: base + "Yachting Jurnal - " + label, dil: K.lang, sayfalar: months.map(sheetSpec) } });
+      if (fmt === "pdf") { const wp = $("#withPhotos"); r = await api("api/pdf", { method: "POST", json: Object.assign({ aylar: months, fotograflar: wp ? wp.checked : false, dosya: base + t("Kasa Raporu") + " - " + label, dil: K.lang }, ek) }); }
+      else r = await api("api/excel", { method: "POST", json: { dosya: base + "Yachting Jurnal - " + label, dil: K.lang, para: K.paraKodu(), sayfalar: sayfalar() } });
       const sh = $("#expSheet");
       sh.innerHTML = '<div class="done"><span class="oi' + (fmt === "pdf" ? "" : " x") + '">' + (fmt === "pdf" ? "PDF" : "XLS") + '</span><div><h3 style="margin-bottom:6px">' + esc(fmt === "pdf" ? t("PDF rapor hazır") : t("Excel dosyası hazır")) + '</h3><div class="info"><p><b>' + esc(r.ad) + '</b></p><div class="pathbox">' + esc(r.yol) + '</div></div></div></div><div class="acts"><div class="r"><button type="button" class="btn" id="showFile">' + esc(t("Klasörde göster")) + '</button><button type="button" class="btn pri" id="openFile">' + esc(t("Aç")) + '</button><button type="button" class="btn" id="closeSheet">' + esc(t("Kapat")) + '</button></div></div>';
       $("#openFile").onclick = () => openPath(r.yol, false);
@@ -902,31 +1231,44 @@
   }
   function serial(iso) { const [y, m, d] = iso.split("-").map(Number); return (Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 864e5; }
   function sheetSpec(ym) {
-    const k = kasaFor(ym);
-    const its = S.items.filter(e => (e.date || "").slice(0, 7) === ym).sort(K.cmpEntry);
+    const k = kasaFor(ym), oz = ozetFor(ym);
+    const its = S.items.filter(e => (e.date || "").slice(0, 7) === ym && K.tutarGecerli(e)).sort(K.cmpEntry);
     const H = []; const put = (r, v, st, f) => H.push({ r, v: v === undefined ? null : v, st: st || "", f: f || "" });
-    const up = s => s.toLocaleUpperCase(K.lang === "en" ? "en-GB" : "tr-TR");
+    const up = s => s.toLocaleUpperCase(K.loc);
+    const kasaIds = hesapListe().filter(h => h.tur === "nakit").map(h => h.id);
+    const kasaEtki = e => r2(kasaIds.reduce((a, id) => a + K.etki(e, id), 0) / 100);
     put("A1", S.set.name || "Yachting Jurnal", "baslik"); put("E1", up(t("Dönem")), "etiket"); put("E2", serial(ym + "-01"), "donem");
     put("A2", t("Günlük harcama fiş takip tablosu"), "etiket");
-    put("A4", up(t("Devir kasa")), "etiket"); put("C4", up(t("Gelen para")), "etiket"); put("D4", up(t("Toplam harcama")), "etiket"); put("E4", up(t("Kalan kasa")), "etiket");
-    [t("Tarih"), t("Şirket"), t("Açıklama"), t("Harcama") + " (₺)", t("Gelen para") + " (₺)", t("Ödeme"), t("Kategori"), t("Not")].map(up).forEach((x, i) => put("ABCDEFGH"[i] + "7", x, i === 3 || i === 4 ? "basliksatirsag" : "basliksatir"));
-    put("A8", up(t("Devir")) + " · " + t("önceki dönemden kalan kasa"), "metin"); ["B8", "C8", "D8", "F8", "G8", "H8"].forEach(c => put(c, null, "metin")); put("E8", k.devir, "para");
+    const pu = K.paraUyumsuz(its, S.set); if (pu.length) put("A3", t("{n} kayıt başka bir para biriminde girilmiş (defter {para}); bu kayıtlar toplamlara katılmadı:", { n: pu.length, para: K.paraKodu() }) + " " + pu.map(e => K.dmy(e.date) + " " + K.fx(e.amount, K.kayitParasi(e))).join(", "), "etiket");
+    // row 4–5: the cash box equation (Devir + Kasaya giren − Kasadan çıkan = Kalan kasa); income and expenses of every account on their own, labelled
+    put("A4", up(t("Devir kasa")), "etiket"); put("C4", up(t("Kasaya giren")), "etiket"); put("D4", up(t("Kasadan çıkan")), "etiket"); put("E4", up(t("Kalan kasa")), "etiket");
+    put("G4", up(t("Gelen para (tüm hesaplar)")), "etiket"); put("H4", up(t("Toplam harcama (tüm hesaplar)")), "etiket");
+    const onceki = K.oncekiIadeler ? K.oncekiIadeler(S.items) : new Set();
+    [t("Tarih"), t("Şirket"), t("Açıklama"), t("Harcama") + " (" + K.paraSym() + ")", t("Gelen para") + " (" + K.paraSym() + ")", t("Hesap / kart"), t("Kategori"), t("Kasa etkisi") + " (" + K.paraSym() + ")", t("Not")].map(up).forEach((x, i) => put("ABCDEFGHI"[i] + "7", x, i === 3 || i === 4 || i === 7 ? "basliksatirsag" : "basliksatir"));
+    put("A8", up(t("Devir")) + " · " + t("önceki dönemden kalan kasa"), "metin"); ["B8", "C8", "D8", "F8", "G8", "I8"].forEach(c => put(c, null, "metin")); put("E8", k.devir, "para"); put("H8", k.devir, "para");
     its.forEach((e, ix) => {
-      const r = 9 + ix, inn = isIn(e);
+      const r = 9 + ix, inn = isIn(e), tr = K.isTr(e), iade = K.isIade(e), hid = K.hesapOf(e);
       put("A" + r, serial(e.date), "tarih"); put("B" + r, e.vendor || "", "metin"); put("C" + r, e.desc || "", "metin");
-      put("D" + r, inn ? null : +e.amount || 0, "para"); put("E" + r, inn ? +e.amount || 0 : null, "paragelen");
-      put("F" + r, K.payName(e.pay), "metin"); put("G" + r, inn ? t("Gelen para") : K.catLabel(e.cat), "metin");
-      put("H" + r, [K.amountNote(e), e.note, e.photo ? t("Fiş fotoğrafı var") : ""].filter(Boolean).join(" · "), "metin");
+      const gir = K.hesabaGirer(e, S.set);   // R7: an entry in another book currency stays out of every column that is added up
+      put("D" + r, inn || tr || !gir ? null : (iade ? -1 : 1) * (+e.amount || 0), "para"); put("E" + r, inn && gir ? +e.amount || 0 : null, "paragelen");
+      put("F" + r, tr ? hesapAd(hid) + " → " + hesapAd(e.hedef) : hesapAd(hid) + (inn && e.pay ? " · " + K.payName(e.pay) : ""), "metin");
+      put("G" + r, inn ? t("Gelen para") : tr ? t("Transfer") : (iade ? (onceki.has(e.id) ? t("Önceki dönem iadesi") : t("İade")) + " · " : "") + K.catLabel(e.cat), "metin");
+      const ke = gir ? kasaEtki(e) : 0; put("H" + r, ke || null, "para");
+      put("I" + r, [gir ? "" : t("UYUMSUZ PARA BİRİMİ: {tutar}, toplama katılmadı", { tutar: K.fx(e.amount, K.kayitParasi(e)) }), K.amountNote(e), e.note, e.photo ? t("Fiş fotoğrafı var") : ""].filter(Boolean).join(" · "), "metin");
     });
     const first = 9, last = Math.max(first, 8 + its.length), tot = last + 1, kal = last + 2;
-    put("A" + tot, up(t("Toplam")), "kalinzemin"); ["B", "C", "F", "G", "H"].forEach(c => put(c + tot, null, "kalinzemin"));
-    put("D" + tot, k.out, "parakalin", "SUM(D" + first + ":D" + last + ")"); put("E" + tot, r2(k.devir + k.in), "parakalin", "SUM(E8:E" + last + ")");
-    put("A" + kal, up(t("Kalan kasa")) + "  (" + t("Devir + Gelen para − Harcama") + ")", "kalin"); put("E" + kal, k.kalan, "kalan", "E" + tot + "-D" + tot);
+    put("A" + tot, up(t("Toplam")), "kalinzemin"); ["B", "C", "F", "G", "I"].forEach(c => put(c + tot, null, "kalinzemin"));
+    put("D" + tot, oz.gider, "parakalin", "SUM(D" + first + ":D" + last + ")"); put("E" + tot, oz.gelir, "parakalin", "SUM(E" + first + ":E" + last + ")");
+    put("H" + tot, k.kalan, "parakalin", "SUM(H8:H" + last + ")");
+    put("A" + kal, up(t("Kalan kasa")) + "  (" + t("Devir + kasa etkisi; kart ve banka harcamaları nakit kasayı değiştirmez") + ")", "kalin"); put("H" + kal, k.kalan, "kalan", "H" + tot);
     if (isClosed(ym)) put("A" + (kal + 1), up(t("Dönem kapandı")) + " · " + t("kalan kasa {ay} devrine aktarıldı", { ay: monthLabel(addMonth(ym, 1)) }), "etiket");
-    put("A5", k.devir, "para", "E8"); put("C5", k.in, "paragelen", "SUM(E" + first + ":E" + last + ")"); put("D5", k.out, "para", "D" + tot); put("E5", k.kalan, "kalan", "E" + kal);
-    return { ad: K.monthName(+ym.slice(5, 7)) + "_" + ym.slice(0, 4), sutunlar: [12, 24, 30, 15, 15, 9, 20, 34], dondur: 8,
-      birlesik: ["A1:C1", "A2:C2", "E1:F1", "E2:F2", "A4:B4", "A5:B5", "A8:D8", "A" + tot + ":C" + tot, "A" + kal + ":D" + kal], hucreler: H };
+    const kek = its.map(e => K.hesabaGirer(e, S.set) ? Math.round(kasaEtki(e) * 100) : 0), gir = r2(kek.reduce((a, x) => a + (x > 0 ? x : 0), 0) / 100), cik = r2(kek.reduce((a, x) => a - (x < 0 ? x : 0), 0) / 100);
+    put("A5", k.devir, "para", "H8"); put("C5", gir, "paragelen", 'SUMIF(H' + first + ':H' + last + ',">0")'); put("D5", cik, "para", '-SUMIF(H' + first + ':H' + last + ',"<0")'); put("E5", k.kalan, "kalan", "H" + kal);
+    put("G5", oz.gelir, "paragelen", "E" + tot); put("H5", oz.gider, "para", "D" + tot);
+    return { ad: K.monthName(+ym.slice(5, 7)) + "_" + ym.slice(0, 4), sutunlar: [12, 24, 30, 15, 15, 22, 20, 15, 34], dondur: 8,
+      birlesik: ["A1:C1", "A2:C2", "E1:F1", "E2:F2", "A4:B4", "A5:B5", "A8:G8", "A" + tot + ":C" + tot, "A" + kal + ":G" + kal], hucreler: H };
   }
+
 
 
 
@@ -936,6 +1278,7 @@
   const erisimEngeli = () => S.mode === "live" && !S.terms && !!(S.senk && S.senk.bagli && S.senk.lisansAcik && !S.senk.izinli);
   const kilitli = () => girisGerekli() || erisimEngeli();
   const bugunISO = () => todayISO();
+  const odemeSorunu = () => { const L = S.senk && S.senk.lisans; return L && L.izin && !L.kapali && L.abonelik && L.abonelik.odemeSorunu || null; };   // Paddle: ödeme alınamadı, ek süre
   function kalanGun() {
     const L = S.senk && S.senk.lisans;
     if (!L || !L.izin || !L.bitis || L.kapali) return null;
@@ -972,8 +1315,9 @@
       '<div class="field full"><label for="tk_ad">' + esc(t("Tekne adı (ya da şirket, ev)")) + '</label><input id="tk_ad" maxlength="80" value="' + esc(st.name || "") + '" placeholder="' + esc(t("Örn. M/Y Tekne Adı")) + '"></div>' +
       '<div class="field"><label for="tk_kap">' + esc(t("Kaptan (raporu hazırlayan)")) + '</label><input id="tk_kap" maxlength="80" value="' + esc(st.preparedBy || "") + '" placeholder="' + esc(t("Örn. Ad Soyad")) + '"></div>' +
       '<div class="field"><label for="tk_don">' + esc(t("Donatan / armatör (onaylayan)")) + '</label><input id="tk_don" maxlength="80" value="' + esc(st.approvedBy || "") + '" placeholder="' + esc(t("Örn. Ad Soyad (donatan ya da yetkilisi)")) + '"></div>' +
-      '<div class="field"><label for="tk_kasa">' + esc(t("Başlangıç kasası (₺)")) + '</label>' + numBox("tk_kasa", st.opening != null ? num(st.opening) : "", 2, ' data-neg="1"') + ' placeholder="' + esc(num(0)) + '"></div>' +
+      '<div class="field"><label for="tk_kasa">' + esc(K.tp("Başlangıç kasası (₺)")) + '</label>' + numBox("tk_kasa", st.opening != null ? num(st.opening) : "", 2, ' data-neg="1"') + ' placeholder="' + esc(num(0)) + '"></div>' +
       '<div class="field"><label for="tk_tarih">' + esc(t("Başlangıç tarihi")) + '</label><input id="tk_tarih" type="date" value="' + esc(st.openingDate || todayISO()) + '"></div>' +
+      paraSecHTML("tk_para") +
       '</div><div class="err-t" id="tkerr"></div><div class="acts"><button type="button" class="btn" id="closeSheet">' + esc(t("Sonra")) + '</button><div class="r"><button type="submit" class="btn pri" id="tkKaydet">' + esc(t("Kaydet ve başla")) + '</button></div></div></form></div>';
     setTimeout(() => { const f = $("#tk_ad"); if (f) f.focus(); }, 50);
   }
@@ -981,8 +1325,11 @@
     const ad = $("#tk_ad").value.trim(), kv = $("#tk_kasa").value.trim(), kasa = kv ? toNum(kv) : null;
     if (!ad) { $("#tkerr").textContent = t("Tekne adını yazın."); $("#tk_ad").focus(); return; }
     if (kv && isNaN(kasa)) { $("#tkerr").textContent = t("Başlangıç kasasını rakamla yazın."); return; }
+    const tv = $("#tk_tarih").value, yeniTarih = (!S.set.openingDate && tv === todayISO() && kasa == null ? "" : tv) || S.set.openingDate || todayISO();   // an untouched, pre-filled date is no change
+    { const eng = acilisEngeli(kasa == null ? S.set.opening : kasa, (!S.set.openingDate && kasa == null && yeniTarih === todayISO()) ? S.set.openingDate : yeniTarih); if (eng) { $("#tkerr").textContent = engelMesaji(eng); return; } }
     const prev = JSON.stringify(S.set);
-    Object.assign(S.set, { name: ad, preparedBy: $("#tk_kap").value.trim(), approvedBy: $("#tk_don").value.trim(), opening: kasa == null ? S.set.opening : r2(kasa), openingDate: $("#tk_tarih").value || S.set.openingDate || todayISO() });
+    Object.assign(S.set, { name: ad, preparedBy: $("#tk_kap").value.trim(), approvedBy: $("#tk_don").value.trim(), opening: kasa == null ? S.set.opening : r2(kasa), openingDate: yeniTarih });
+    const yp = paraOku("tk_para"); if (yp !== (S.set.para || "TRY")) S.set.para = yp;
     try { await persistSettings(); closeSheet(); render(); toast(t("Tekne bilgileri kaydedildi. İlk fişi ekleyebilirsiniz.")); }
     catch (e) { S.set = JSON.parse(prev); $("#tkerr").textContent = e.message; }
   }
@@ -1040,8 +1387,9 @@
   }
 
   /* ---------------- admin panel: overview, users, plans, payments (yonetim/Kod.gs) ---------------- */
-  const PAKET_ADI = () => ({ ucretsiz: t("Ücretsiz"), standart: t("Standart"), premium: t("Premium") });
-  const para = (n, c) => (c && c !== "TRY" ? K.dec(n) + " " + c : tl(n));
+  const paketAd = (kod, ad) => PAKET_ADI()[kod] || ad || kod;   // görünen ad: Free / Starter / Pro / Advanced (sunucudaki eski adlardan bağımsız)
+  const PAKET_ADI = () => Object.assign({}, K.PAKET_AD || { ucretsiz: "Free", basic: "Starter", pro: "Pro", fleet: "Advanced", standart: "Starter", premium: "Pro" });   // standart/premium: 3.0 kodları
+  const para = (n, c) => (c && c !== "TRY" ? K.dec(n) + " " + c : K.fx(n, "TRY"));   // Yachting Jurnal's own prices: lira, whatever the book's currency
   function viewYonetim() {
     const Y = S.yon || {}, bol = Y.bolum || "ozet";
     const sek = [["ozet", t("Özet")], ["kullanicilar", t("Kullanıcılar")], ["paketler", t("Paketler")], ["odemeler", t("Ödemeler")]];
@@ -1068,7 +1416,7 @@
     const kutu = (b, l, ek) => '<div class="ystat' + (ek ? " " + ek : "") + '"><span>' + esc(l) + '</span><b>' + b + '</b></div>';
     let h = '<div class="panel"><h3>' + esc(t("Kullanıcılar")) + '</h3><div class="ystatlar">' +
       kutu(st.toplam, t("Toplam kullanıcı")) + kutu(st.bugunYeni, t("Bugün yeni")) + kutu(st.buAyYeni, t("Bu ay yeni")) + kutu(st.bugunAktif, t("Bugün giriş yapan")) +
-      kutu(st.aktifUcretli, t("Aktif abone"), "vurgu") + kutu(st.deneme, t("Denemede")) + kutu(st.standart, t("Standart")) + kutu(st.premium, t("Premium")) +
+      kutu(st.aktifUcretli, t("Aktif abone"), "vurgu") + kutu(st.deneme, t("Denemede")) + kutu(st.basic != null ? st.basic : st.standart, "Starter") + kutu(st.pro != null ? st.pro : st.premium, "Pro") + kutu(st.fleet || 0, "Advanced") + kutu(st.odemeSorunu || 0, t("Ödeme sorunu")) +
       kutu(st.ucretsiz, t("Ücretsiz")) + kutu(st.suresiDoldu, t("Süresi dolan")) + kutu(st.kapali, t("Kapalı / iptal")) + kutu(st.windows + " · " + st.iphone, t("Windows · iPhone")) +
       '</div><p class="seglbl" style="margin:14px 0 4px">' + esc(t("Son 30 günde yeni kullanıcılar")) + '</p>' + cubuk(st.gunluk, d => d[1], d => dmy(d[0]) + ": " + d[1]) + '</div>';
     h += '<div class="panel"><h3>' + esc(t("Gelir")) + '</h3><div class="ystatlar">' +
@@ -1121,7 +1469,7 @@
     const sec = (ad, l) => '<select id="' + ad + '">' + l.map(([v, x]) => '<option value="' + esc(v) + '">' + esc(x) + '</option>').join("") + '</select>';
     $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><form class="sheet" id="yOdemeForm" role="dialog" aria-modal="true" aria-labelledby="sh" novalidate><h3 id="sh">' + esc(t("Ödeme ekle")) + '</h3><div class="grid2">' +
       '<div class="field full"><label for="yo_eposta">' + esc(t("Google hesabı (e-posta)")) + '</label><input id="yo_eposta" type="email" maxlength="254" autocomplete="off"></div>' +
-      '<div class="field"><label for="yo_paket">' + esc(t("Paket")) + '</label>' + sec("yo_paket", P.filter(p => p.kod !== "ucretsiz").map(p => [p.kod, p.ad])) + '</div>' +
+      '<div class="field"><label for="yo_paket">' + esc(t("Paket")) + '</label>' + sec("yo_paket", P.filter(p => p.kod !== "ucretsiz").map(p => [p.kod, paketAd(p.kod, p.ad)])) + '</div>' +
       '<div class="field"><label for="yo_donem">' + esc(t("Dönem")) + '</label>' + sec("yo_donem", [["aylik", t("Aylık")], ["yillik", t("Yıllık")]]) + '</div>' +
       '<div class="field"><label for="yo_tutar">' + esc(t("Tutar")) + '</label><input id="yo_tutar" inputmode="decimal"></div>' +
       '<div class="field"><label for="yo_durum">' + esc(t("Durum")) + '</label>' + sec("yo_durum", [["Başarılı", t("Başarılı")], ["Başarısız", t("Başarısız")], ["İade", t("İade")]]) + '</div>' +
@@ -1160,18 +1508,21 @@
     const durum = V.durum === "deneme" ? t("Deneme") + (V.bitis ? " · " + t("{n} gün kaldı", { n: Math.max(0, kg) }) : "") : V.durum === "acik" ? t("Aktif") : V.durum === "ucretsiz" ? t("Ücretsiz") : V.durum === "suresi-doldu" ? t("Süresi doldu") : t("Kapalı");
     let h = '<div class="panel hesap"><h3>' + esc(t("Hesabım")) + '</h3><div class="kv">' +
       '<div><span>' + esc(t("Google hesabı")) + '</span><b>' + esc(V.hesap) + '</b></div>' +
-      '<div><span>' + esc(t("Paket")) + '</span><b>' + esc(a.paketAd || "—") + (a.donem ? " · " + esc(a.donem === "yillik" ? t("yıllık") : t("aylık")) : "") + '</b></div>' +
+      '<div><span>' + esc(t("Paket")) + '</span><b>' + esc(paketAd(a.paket, a.paketAd) || "—") + (a.donem ? " · " + esc(a.donem === "yillik" ? t("yıllık") : t("aylık")) : "") + '</b></div>' +
       '<div><span>' + esc(t("Durum")) + '</span><b>' + esc(durum) + '</b></div>' +
       '<div><span>' + esc(V.durum === "deneme" ? t("Deneme bitişi") : t("Bitiş / yenileme")) + '</span><b>' + esc(a.yenileme ? dmy(a.yenileme) : V.bitis ? dmy(V.bitis) : t("Süresiz")) + '</b></div></div>' +
-      (a.ozellikler && a.ozellikler.length ? '<ul class="hozellik">' + a.ozellikler.map(o => '<li>' + esc(o) + '</li>').join("") + '</ul>' : "") + '</div>';
+      (a.ozellikler && a.ozellikler.length ? '<ul class="hozellik">' + a.ozellikler.map(o => '<li>' + esc(o) + '</li>').join("") + '</ul>' : "") +
+      (a.planlanan ? '<p class="small" style="margin:10px 0 0">' + esc(t("{tarih} tarihinden sonra paketiniz {paket} olacak; o güne kadar şimdiki paketiniz açık.", { tarih: dmy(a.planlanan.tarih), paket: paketAd(a.planlanan.paket, a.planlanan.paketAd) })) + '</p>' : "") + '</div>';
+    if (a.odemeSorunu) h = '<div class="note err"><span><b>' + esc(t("Ödeme alınamadı, kartınızı güncelleyin")) + '</b>' + esc(t("Aboneliğiniz {tarih} tarihine kadar açık kalır. Kartınızı “Aboneliği yönet” bölümünden güncelleyebilirsiniz.", { tarih: dmy(a.odemeSorunu.ekSureSon) })) + '</span>' + (a.kaynak === "web" ? '<span class="btns"><button class="btn sm pri" id="hesYonet">' + esc(t("Aboneliği yönet")) + '</button></span>' : "") + '</div>' + h;
     const P = (V.paketler || []).filter(p => p.kod !== "ucretsiz");
-    if (P.length) h += '<div class="panel"><h3>' + esc(t("Paketler")) + '</h3><div class="hpaketler">' + P.map(p => '<div class="hpaket' + (p.kod === a.paket ? " on" : "") + '"><b>' + esc(p.ad) + '</b><span class="fiyat">' + esc(para(p.aylik, p.para)) + ' <small>/ ' + esc(t("ay")) + '</small></span><span class="small">' + esc(t("Yıllık {tutar}", { tutar: para(p.yillik, p.para) })) + '</span><ul>' + p.ozellikler.map(o => '<li>' + esc(o) + '</li>').join("") + '</ul></div>').join("") + '</div>' +
-      '<p class="small" style="margin:10px 0 0">' + esc(t("Çevrimiçi ödeme yakında. Şimdilik abonelik için kasajurnali@gmail.com adresine yazın; ödemeniz alınınca paketiniz hemen açılır.")) + '</p></div>';
+    if (P.length) h += '<div class="panel"><h3>' + esc(t("Paketler")) + '</h3><div class="hpaketler">' + P.map(p => '<div class="hpaket' + (p.kod === a.paket ? " on" : "") + '"><b>' + esc(paketAd(p.kod, p.ad)) + '</b><span class="fiyat">' + esc(para(p.aylik, p.para)) + ' <small>/ ' + esc(t("ay")) + '</small></span><span class="small">' + esc(t("Yıllık {tutar}", { tutar: para(p.yillik, p.para) })) + '</span><ul>' + p.ozellikler.map(o => '<li>' + esc(o) + '</li>').join("") + '</ul>' +
+      '<div class="btns" style="justify-content:flex-start;margin-top:8px"><a class="btn pri sm" target="_blank" rel="noopener" href="' + esc(odemeAdresi(p.kod, "aylik", V.hesap)) + '">' + esc(t("Aylık al")) + '</a><a class="btn sm" target="_blank" rel="noopener" href="' + esc(odemeAdresi(p.kod, "yillik", V.hesap)) + '">' + esc(t("Yıllık al")) + '</a></div></div>').join("") + '</div>' +
+      '<p class="small" style="margin:10px 0 0">' + esc(t("Ödeme, güvenli Paddle sayfasında yapılır; paketiniz ödemeden hemen sonra açılır. Fiyatlara KDV dahildir. İlk ödemeden sonraki 14 gün içinde tam iade.")) + '</p></div>';
     const O = V.odemeler || [];
     h += '<div class="panel"><h3>' + esc(t("Ödeme geçmişi")) + '</h3>' + (O.length ? '<div class="ytablo"><table><thead><tr><th>' + [t("Tarih"), t("Paket"), t("Tutar"), t("Durum")].map(esc).join("</th><th>") + '</th></tr></thead><tbody>' +
       O.map(o => '<tr><td>' + esc(o.tarih ? dmy(o.tarih.slice(0, 10)) : "") + '</td><td>' + esc((PAKET_ADI()[o.paket] || o.paket) + " · " + (o.donem === "yillik" ? t("yıllık") : t("aylık"))) + '</td><td class="num">' + esc(para(o.tutar, o.para)) + '</td><td>' + esc(t(o.durum)) + '</td></tr>').join("") + '</tbody></table></div>' : '<p class="small" style="margin:0">' + esc(t("Henüz ödeme yok.")) + '</p>') + '</div>';
-    h += '<div class="panel"><h3>' + esc(t("Abonelik ve hesap işlemleri")) + '</h3><p class="lead">' + esc(t("Aboneliğinizi değiştirmek ya da iptal etmek için kasajurnali@gmail.com adresine yazabilirsiniz. “Hesabımı sil” ile Yachting Jurnal hesabınız hemen silinir ve oturumunuz kapanır.")) + '</p>' +
-      '<div class="btns" style="justify-content:flex-start"><a class="btn" href="mailto:kasajurnali@gmail.com?subject=' + encodeURIComponent("Abonelik / Subscription") + '">' + esc(t("Destek ve abonelik")) + '</a><button class="btn danger" id="hesapSilAc">' + esc(t("Hesabımı sil")) + '</button></div></div>';
+    h += '<div class="panel"><h3>' + esc(t("Abonelik ve hesap işlemleri")) + '</h3><p class="lead">' + esc(t("Aboneliğinizi “Aboneliği yönet” ile değiştirebilir, ödeme kartınızı güncelleyebilir ya da istediğiniz zaman ücretsiz iptal edebilirsiniz. “Hesabımı sil” ile Yachting Jurnal hesabınız hemen silinir ve oturumunuz kapanır.")) + '</p>' +
+      '<div class="btns" style="justify-content:flex-start">' + (a.kaynak === "web" ? '<button class="btn pri" id="hesYonet">' + esc(t("Aboneliği yönet")) + '</button>' : "") + '<a class="btn" href="mailto:kasajurnali@gmail.com?subject=' + encodeURIComponent("Abonelik / Subscription") + '">' + esc(t("Destek ve abonelik")) + '</a><button class="btn danger" id="hesapSilAc">' + esc(t("Hesabımı sil")) + '</button></div></div>';
     return h;
   }
   function openYKisi(eposta) {
@@ -1183,7 +1534,7 @@
       (x ? "" : '<div class="field full"><label for="y_eposta">' + esc(t("Google hesabı (e-posta)")) + '</label><input id="y_eposta" type="email" maxlength="254" autocomplete="off" placeholder="' + esc(t("Örn. ad.soyad@gmail.com")) + '"></div>') +
       '<div class="full"><p class="seglbl" style="margin-bottom:4px">' + esc(t("Durum")) + '</p><div class="seg" role="radiogroup">' + ["Açık", "Deneme", "Kapalı"].map(d => '<label><input type="radio" name="y_durum" value="' + d + '"' + (v.durum === d ? " checked" : "") + '><span>' + esc(t(d)) + '</span></label>').join("") + '</div></div>' +
       '<div class="field full"><label for="y_bitis">' + esc(t("Son kullanım günü (boş = süresiz)")) + '</label><div class="ybitis"><input id="y_bitis" type="date" value="' + esc(v.bitis || "") + '"><button type="button" class="btn sm" data-ysure="30g">' + esc(t("+30 gün")) + '</button><button type="button" class="btn sm" data-ysure="3a">' + esc(t("+3 ay")) + '</button><button type="button" class="btn sm" data-ysure="1y">' + esc(t("+1 yıl")) + '</button><button type="button" class="btn sm" data-ysure="yok">' + esc(t("Süresiz")) + '</button></div></div>' +
-      '<div class="field"><label for="y_paket">' + esc(t("Paket")) + '</label><select id="y_paket"><option value="">' + esc(t("Premium (varsayılan)")) + '</option>' + ["ucretsiz", "standart", "premium"].map(k => '<option value="' + k + '"' + (v.paket === k ? " selected" : "") + '>' + esc(PAKET_ADI()[k]) + '</option>').join("") + '</select></div>' +
+      '<div class="field"><label for="y_paket">' + esc(t("Paket")) + '</label><select id="y_paket"><option value="">' + esc(t("Pro (varsayılan)")) + '</option>' + ["ucretsiz", "basic", "pro", "fleet"].map(k => '<option value="' + k + '"' + (K.paketKodu(v.paket) === k ? " selected" : "") + '>' + esc(PAKET_ADI()[k]) + '</option>').join("") + '</select></div>' +
       '<div class="field"><label for="y_donem">' + esc(t("Dönem")) + '</label><select id="y_donem"><option value="">—</option><option value="aylik"' + (v.donem === "aylik" ? " selected" : "") + '>' + esc(t("Aylık")) + '</option><option value="yillik"' + (v.donem === "yillik" ? " selected" : "") + '>' + esc(t("Yıllık")) + '</option></select></div>' +
       '<div class="field full"><label for="y_mesaj">' + esc(t("Kişiye gösterilecek not (erişim kapalıyken)")) + '</label><input id="y_mesaj" maxlength="500" value="' + esc(v.mesaj || "") + '" placeholder="' + esc(t("Örn. Ödeme bekleniyor.")) + '"></div>' +
       '<div class="field full"><label for="y_not">' + esc(t("Kendi notunuz (yalnızca siz görürsünüz)")) + '</label><input id="y_not" maxlength="500" value="' + esc(v.not || "") + '" placeholder="' + esc(t("Örn. tekne adı, aylık")) + '"></div>' +
@@ -1240,13 +1591,14 @@
     excel: '<path d="M4 4h16v16H4z"/><path d="M4 9h16M9 4v16"/>', yedek: '<path d="M12 3v12M7 10l5 5 5-5M4 20h16"/>', ayar: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/>',
     kitap: '<path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4z"/><path d="M20 4h-6a3 3 0 0 0-3 3"/><path d="M20 4v14h-6"/>', yasal: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>', cikis: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h11"/>',
     kisi: '<circle cx="12" cy="8" r="3.6"/><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7"/>',
+    kart: '<rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M6.5 15h4"/>',
     kisiler: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14.2c2.9.2 5 2.6 5 5.8"/>'
   };
   const mik = n => '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + MI[n] + '</svg>';
   function openMenu() {
     if (kilitli() || mustAccept()) return;
     const b = S.senk || {};
-    const ogeler = [["ana", "ev", t("Ana sayfa")], ["list", "liste", t("Jurnal")], ["fisler", "foto", t("Fişler")], ["sum", "ozet", t("Özet")], ["rapor", "rapor", t("Raporlar")], ["tekne", "tekne", t("Tekne bilgileri")],
+    const ogeler = [["ana", "ev", t("Ana sayfa")], ["list", "liste", t("Jurnal")], ["fisler", "foto", t("Fişler")], ["sum", "ozet", t("Özet")], ["rapor", "rapor", t("Raporlar")], ["hesaplar", "kart", t("Hesaplar ve kartlar")], ["tekne", "tekne", t("Tekne bilgileri")], ["tekneler", "tekne", t("Tekneler")], ["sirket", "ozet", t("Şirket paneli")],
       ["hesap", "bulut", t("Google hesabı ve eşitleme")], ["excel", "excel", t("Excel’den içe aktar")], ["yedek", "yedek", t("Yedekler")], ["ayar", "ayar", t("Ayarlar")],
       ["#kilavuz", "kitap", t("Kullanım kılavuzu")], ["#yasal", "yasal", t("Yasal bilgiler")]];
     if (b.bagli && b.lisansAcik) ogeler.splice(4, 0, ["hesabim", "kisi", t("Hesabım ve Abonelik")]);
@@ -1256,13 +1608,16 @@
       ogeler.map(([k, i, l]) => '<button type="button" class="ditem' + (k === S.tab ? " on" : "") + '" data-menu="' + k + '">' + mik(i) + '<span>' + esc(l) + '</span></button>').join("") +
       '<div class="dsurum">Yachting Jurnal ' + esc(SURUM) + '</div></nav></div>';
   }
-  window.KJgit = k => menuSec(k === "io" ? "tum" : k);   // used by the tests to open a page directly
+  window.KJgit = k => menuSec(k === "io" ? "tum" : k);
+  window.KJtekne = () => openTekne();   // used by the tests to open the boat form   // used by the tests to open a page directly
   function menuSec(k) {
     closeSheet();
     if (k === "#kilavuz") { openDoc("kilavuz"); return; }
     if (k === "#yasal") { openTerms("view"); return; }
     if (k === "#cikis") { openSenkOff(); return; }
-    const [tab, yer] = k.split("#");
+    let [tab, yer] = k.split("#");
+    if (tab === "fisler" && !K.ozellikIste("fis_arsivi", t("Fiş arşivi"))) return;   // paket.js
+    if (tab === "yonetim" && !(S.senk && S.senk.lisans && S.senk.lisans.yonetici)) tab = "ana";   // the control centre is for the owner only
     S.tab = tab; if (tab === "yonetim") { yonYukle(); yIstYukle(); } if (tab === "hesabim") hesYukle(); if (tab === "ana") S._anaGoruldu = false; render();
     if (yer) setTimeout(() => { const el = document.getElementById(yer); if (el) el.scrollIntoView({ block: "start", behavior: "smooth" }); }, 30);
     else window.scrollTo({ top: 0 });
@@ -1332,6 +1687,14 @@
     const d = $("#gDurum"); if (d) d.innerHTML = '<span class="spin"></span>' + esc(G.mesaj || t("Onay bekleniyor…"));
     G.t = setTimeout(gBekle, G.aralik * 1000);
   }
+  // online payment: the checkout runs on the website (Paddle), opened in the browser with the Google account filled in
+  const odemeAdresi = (paket, donem, eposta) => "https://yachtingjurnal.com/odeme.html?paket=" + encodeURIComponent(paket) + "&donem=" + donem + "&eposta=" + encodeURIComponent(eposta || "");
+  async function abonelikYonet(b) {
+    b.disabled = true;
+    try { const r = await KJSenk.yonetim({ islem: "abonelikYonet" }); if (r.adres) window.open(r.adres, "_blank", "noopener"); }
+    catch (e) { toast(e.message); }
+    b.disabled = false;
+  }
   // account deletion (Google Play / App Store rule): the access record is deleted on the server, then the user is signed out
   function openHesapSil() {
     const V = (S.hes && S.hes.veri) || {};
@@ -1384,7 +1747,7 @@
   }
   function openGuncelle() {
     const y = S.guncel && S.guncel.yeni; if (!y) return;
-    const not = y.notlar ? (y.notlar[K.lang] || y.notlar.tr || "") : "";
+    const not = y.notlar ? (y.notlar[K.lang] || (K.lang !== "tr" && y.notlar.en) || y.notlar.tr || "") : "";
     $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh" id="gunSheet"><h3 id="sh">' + esc(t("Yachting Jurnal {surum}", { surum: y.surum })) + '</h3><div class="info">' + (not ? '<p>' + esc(not) + '</p>' : "") + '<p>' + esc(t("Yeni sürüm indirilip kurulacak. Program birkaç saniye kapanıp yeniden açılır; kayıtlarınıza ve ayarlarınıza dokunulmaz.")) + '</p></div><div class="err-t" id="gerr"></div>' +
       '<div class="acts"><div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Sonra")) + '</button><button type="button" class="btn pri" id="guncelOk">' + esc(t("Şimdi güncelle")) + '</button></div></div></div></div>';
   }
@@ -1446,18 +1809,22 @@
     const df = d.defter || {};
     S.items = Array.isArray(df.kayitlar) ? df.kayitlar : [];
     S.silinenler = df.silinenler && typeof df.silinenler === "object" ? df.silinenler : {};
+    S.silinenKayitlar = df.silinenKayitlar && typeof df.silinenKayitlar === "object" ? df.silinenKayitlar : {};
     S.set = Object.assign(defaultSet(), df.ayarlar || {});
+    K.setPara(S.set.para);
     if (!S.set.rates || typeof S.set.rates !== "object") S.set.rates = {};
     if (!Array.isArray(S.set.closed)) S.set.closed = [];
     S.setBase = clone(S.set);
     S.rev = d.rev; S.klasor = d.klasor || ""; S.dosya = d.dosya || "";
     if (d.uyari) S.notice = d.uyari;
+    const bozuk = K.gecersizKayitlar(S.items);   // loaded or merged from another device: kept in the book, left out of every total
+    if (bozuk.length) { const m = t("{n} kaydın tutarı eksi ya da geçersiz; bu kayıtlar hesaplara katılmadı. Listede “Geçersiz tutar” ile işaretli kayıtları açıp tutarı düzeltin ya da silin.", { n: bozuk.length }); if (!String(S.notice || "").includes(m)) S.notice = [S.notice, m].filter(Boolean).join(" "); }
     if (!S.period) S.period = curYM();
     applyLang();
   }
-  async function reload() { const d = await api("api/veri"); applyData(d); render(); if (S.terms) renderTerms(); }
+  async function reload() { if (window.KJ_FILO) { await KJ_FILO.listeAl(); KJ_FILO.yenile(); } const d = await api("api/veri"); applyData(d); render(); if (S.terms) renderTerms(); }
   async function ping() {
-    try { const r = await api("api/ping"); if (r && (r.rev !== S.rev || S._pending) && !S.saving) { if (yazarken()) S._pending = true; else { S._pending = false; await reload(); } } } catch (e) { render(); }
+    try { const r = await api("api/ping"); if (r && (r.rev !== S.rev || (r.trev != null && r.trev !== S.filoRev) || S._pending) && !S.saving) { if (yazarken()) S._pending = true; else { S._pending = false; await reload(); } } } catch (e) { render(); }
   }
 
   /* ---------------- events ---------------- */
@@ -1468,6 +1835,7 @@
     if (t0.closest("#acceptTerms")) { acceptTerms(t0.closest("#acceptTerms")); return; }
     if (t0.closest("#declineTerms")) { declineTerms(); return; }
     if (mustAccept()) return;
+    if (window.KJ_FILO && KJ_FILO.tikla(t0)) return;   // Tekneler and Şirket paneli (tekne.js)
     if (t0.closest("#menuBtn")) { openMenu(); return; }
     if (t0.closest("#muzikBtn")) { muzikAcKapa(); return; }
     const mo2 = t0.closest("[data-menu]"); if (mo2) { menuSec(mo2.dataset.menu); return; }
@@ -1493,7 +1861,12 @@
     if (t0.closest("#gVazgec")) { if (S.gbag) clearTimeout(S.gbag.t); S.gbag = null; senkPanelYenile(); return; }
     if (t0.closest("#senkNow")) { KJSenk.esitle(); return; }
     if (t0.closest("#senkOff")) { openSenkOff(); return; }
+    if (t0.closest("#hesapEkle")) { if (hesapListe().filter(h => h.id !== "nakit" && h.durum !== "arsiv").length >= 2 && !K.ozellikIste("coklu_hesap", t("Birden çok kart ve hesap"))) return; openHesap(null); return; }   // Basic: nakit kasa + 2 hesap/kart (paket.js)
+    if (t0.closest("#trEkle")) { openSheet(null, "tr"); return; }
+    if (t0.closest("#hesapSilBtn")) { hesapSilIslem(t0.closest("#hesapSilBtn").dataset.id); return; }
+    { const hb = t0.closest("[data-hesap]"); if (hb) { openHesap(hb.dataset.hesap); return; } }
     if (t0.closest("#hesapSilAc")) { openHesapSil(); return; }
+    if (t0.closest("#hesYonet")) { abonelikYonet(t0.closest("#hesYonet")); return; }
     if (t0.closest("#hesapSilOk")) { hesapSil(t0.closest("#hesapSilOk")); return; }
     if (t0.closest("#senkOffOk")) { const b = t0.closest("#senkOffOk"); b.disabled = true; KJSenk.cikis().then(() => { closeSheet(); S.tab = "list"; render(); toast(S.senk && S.senk.zorunlu ? t("Oturum kapatıldı.") : t("Google Drive bağlantısı kesildi.")); }).catch(e => { b.disabled = false; toast(e.message); }); return; }
     if (t0.closest("#guncelAc") || t0.closest("#guncelKur")) { openGuncelle(); return; }
@@ -1527,6 +1900,8 @@
     if (t0.closest("#phRemove")) { S.ph.removed = true; S.ph.blob = null; if (S.ph.preview) URL.revokeObjectURL(S.ph.preview); S.ph.preview = null; $("#phBox").innerHTML = phBoxHTML(); return; }
     if (t0.id === "scrim" || t0.closest("#closeSheet")) { closeSheet(); return; }
     if (t0.closest("#delBtn")) { delItem(t0.closest("#delBtn")); return; }
+    if (t0.closest("[data-silinenler]")) { openSilinenler(); return; }
+    if (t0.closest("[data-geriyukle]")) { geriYukle(t0.closest("[data-geriyukle]")); return; }
     if (t0.closest("#copyBtn")) { const src = S.items.find(x => x.id === t0.closest("#copyBtn").dataset.id); closeSheet(); const c = Object.assign({}, src); delete c.id; delete c.photo; delete c.createdAt; delete c.updatedAt; delete c.ord; delete c.src; openSheet(null, null, c); return; }
     if (t0.closest("#doImport")) { doImport(); return; }
     if (t0.closest("#cancelImport")) { S.imp = null; render(); return; }
@@ -1534,20 +1909,23 @@
       const av = $("#opAmt").value.trim(), a = av ? toNum(av) : null, low = toNum($("#opLow").value || "0");
       if (av && isNaN(a)) { toast(t("Başlangıç kasasını rakamla yazın.")); return; }
       if (isNaN(low) || low < 0) { toast(t("Uyarı sınırını rakamla yazın (0 = kapalı).")); return; }
+      const yeniTarih = $("#opDate").value || S.set.openingDate || (a == null ? null : todayISO());
+      { const eng = acilisEngeli(a, yeniTarih); if (eng) { toast(engelMesaji(eng)); return; } }
       const prev = JSON.stringify(S.set);
-      Object.assign(S.set, { name: $("#opName").value.trim(), preparedBy: $("#opPrep").value.trim(), approvedBy: $("#opAppr").value.trim(), opening: a == null ? null : r2(a), openingDate: $("#opDate").value || S.set.openingDate || (a == null ? null : todayISO()), lowLimit: r2(low) });
+      Object.assign(S.set, { name: $("#opName").value.trim(), preparedBy: $("#opPrep").value.trim(), approvedBy: $("#opAppr").value.trim(), opening: a == null ? null : r2(a), openingDate: yeniTarih, lowLimit: r2(low) });
+      const yp = paraOku("opPara"); if (yp !== (S.set.para || "TRY")) S.set.para = yp;
       persistSettings().then(() => { render(); toast(t("Ayarlar kaydedildi.")); }).catch(err => { S.set = JSON.parse(prev); toast(err.message); });
       return;
     }
   });
-  document.addEventListener("submit", e => { if (e.target.id === "form") { e.preventDefault(); saveForm(); } else if (e.target.id === "tekForm") { e.preventDefault(); tekneKaydet(); } else if (e.target.id === "yForm") { e.preventDefault(); yKaydet(); } else if (e.target.id === "yOdemeForm") { e.preventDefault(); yOdemeKaydet(); } else if (e.target.dataset && e.target.dataset.ypaket) { e.preventDefault(); yPaketKaydet(e.target); } });
+  document.addEventListener("submit", e => { if (e.target.id === "form") { e.preventDefault(); saveForm(); } else if (e.target.id === "tekForm") { e.preventDefault(); tekneKaydet(); } else if (e.target.id === "hForm") { e.preventDefault(); hesapKaydet(); } else if (e.target.id === "yForm") { e.preventDefault(); yKaydet(); } else if (e.target.id === "yOdemeForm") { e.preventDefault(); yOdemeKaydet(); } else if (e.target.dataset && e.target.dataset.ypaket) { e.preventDefault(); yPaketKaydet(e.target); } });
   document.addEventListener("keydown", e => {
     const el = e.target;
     if (el && el.classList && el.classList.contains("num-in") && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const { g, d } = SEP();
       if (e.code === "NumpadDecimal" && e.key !== d) {        // the keypad's decimal key always gives the decimal mark
         e.preventDefault();
-        if (!el.value.includes(d) && +(el.dataset.dec || 2) > 0) { const p = el.selectionStart; el.value = el.value.slice(0, p) + d + el.value.slice(el.selectionEnd); el.setSelectionRange(p + 1, p + 1); fmtNumBox(el); el.dispatchEvent(new Event("input", { bubbles: true })); }
+        if (!el.value.includes(d) && +(el.dataset.dec || 2) > 0) { const p = el.selectionStart; el.value = el.value.slice(0, p) + d + el.value.slice(el.selectionEnd); el.setSelectionRange(p + 1, p + 1); el._nokta = false; fmtNumBox(el); el.dispatchEvent(new Event("input", { bubbles: true })); }
         return;
       }
       const p = el.selectionStart;
@@ -1567,40 +1945,53 @@
     const el = e.target;
     if (!(el && el.classList && el.classList.contains("num-in"))) return;
     const txt = (e.clipboardData || window.clipboardData).getData("text");
-    const n = K.toNum(txt);                                  // pasted text may come in either format
-    if (!txt || isNaN(n)) return;
+    if (!txt || !/\d/.test(txt)) return;
+    const max = +(el.dataset.dec || 2), n = K.toNumInput(txt, max);   // the same rules as typing; a text that can mean two numbers is refused, never guessed
     e.preventDefault();
-    el.value = boxText(el.dataset.neg === "1" ? n : Math.abs(n), +(el.dataset.dec || 2));
+    if (isNaN(n)) { toast(t("Yapıştırılan “{metin}” sayısı belirsiz; tahmin edilmedi. Sayıyı kutuya elle yazın.", { metin: txt.trim().slice(0, 24) })); return; }
+    el.value = boxText(el.dataset.neg === "1" ? n : Math.abs(n), max);
     el.dispatchEvent(new Event("input", { bubbles: true }));
   });
   document.addEventListener("input", e => {
     const tg = e.target;
-    if (tg.classList && tg.classList.contains("num-in")) fmtNumBox(tg);
+    if (tg.classList && tg.classList.contains("num-in")) fmtNumBox(tg, e);
     if (tg.id === "yAra") { S.yon.ara = tg.value; clearTimeout(S._yt); S._yt = setTimeout(() => { render(); const q = $("#yAra"); if (q) { q.focus(); q.setSelectionRange(q.value.length, q.value.length); } }, 160); return; }
     if (tg.id === "q") { S.q = tg.value; S._focusQ = true; clearTimeout(S._qt); S._qt = setTimeout(render, 160); return; }
     if (tg.id === "f_cat") { S.catTouched = true; const lw = $("#ltWrap"); if (lw) lw.hidden = K.catKey(tg.value) !== "Yakıt" && !(toNum($("#f_lt").value) > 0); }
     if ((tg.id === "f_vendor" || tg.id === "f_desc") && !S.catTouched) { const c = K.guessCat($("#f_vendor").value, $("#f_desc").value); const fc = $("#f_cat"); if (fc) fc.value = K.catLabel(c); const lw = $("#ltWrap"); if (lw) { lw.hidden = c !== "Yakıt" && !(toNum($("#f_lt").value) > 0); if (c === "Yakıt" && !$("#f_lt").value) { const lt = K.parseLt($("#f_desc").value); if (lt > 0) { $("#f_lt").value = boxText(lt, 2); updLt(); } } } }
+    if (tg.id === "f_rate") S.fxKaynak = null;   // typed by hand
     if (tg.id === "f_amount" || tg.id === "f_rate") { updFx(); updLt(); }
     if (tg.id === "f_lt") updLt();
   });
   document.addEventListener("change", e => {
     const tg = e.target;
+    if (window.KJ_FILO && KJ_FILO.degisti(tg)) return;
     if (tg.id === "acc1" || tg.id === "acc2") { if (S.terms) { S.terms[tg.id === "acc1" ? "c1" : "c2"] = tg.checked; const b = $("#acceptTerms"); if (b) b.disabled = !(S.terms.c1 && S.terms.c2); } return; }
     if (tg.name === "lang") { setLanguage(tg.value); return; }
     if (tg.id === "yUcretsiz") { yUcretsizAyar(tg.checked); return; }
     if (tg.name === "fmt") { const po = $("#photoOpt"); if (po) po.hidden = tg.value !== "pdf"; return; }   // photos go only into the PDF report
     if (tg.id === "guncelDenetim") { const prev = S.set.guncelleme; S.set.guncelleme = tg.checked; persistSettings().then(() => { toast(tg.checked ? t("Yeni sürümler otomatik denetlenecek.") : t("Otomatik sürüm denetimi kapatıldı.")); if (tg.checked) guncelDenetle(false); }).catch(e => { S.set.guncelleme = prev; tg.checked = prev !== false; toast(e.message); }); return; }
-    if (tg.name === "ty") { const inn = tg.value === "in"; const cw = $("#catWrap"); if (cw) cw.hidden = inn; const pw = $("#payWrap"); if (pw) pw.innerHTML = payHTML(tg.value, ""); const fm = formMetin(tg.value), vl = $("#vendLbl"); if (vl) vl.textContent = fm.kim; const fv = $("#f_vendor"); if (fv) fv.placeholder = fm.kimOrn; const fd = $("#f_desc"); if (fd) fd.placeholder = fm.acOrn; const lw = $("#ltWrap"); if (lw && inn) lw.hidden = true; const qb = $("#quickBox"); if (qb && !S.editing) qb.innerHTML = quickHTML(tg.value); $("#sh").textContent = sheetTitle(!!S.editing, inn, false); updFx(); return; }
-    if (tg.id === "f_cur") { const cur = tg.value; const r = (S.set.rates || {})[cur]; const fr = $("#f_rate"); if (fr && cur !== "TRY" && !fr.value && r) fr.value = K.dec(r); updFx(); updLt(); if (cur !== "TRY" && fr && !fr.value) fr.focus(); return; }
+    if (tg.name === "ty") {
+      const ty = tg.value, gizli = ty === "in" || ty === "tr";
+      const cw = $("#catWrap"); if (cw) cw.hidden = gizli;
+      const lw = $("#ltWrap"); if (lw && ty !== "out") lw.hidden = true;
+      const pw = $("#payWrap"); if (pw) pw.innerHTML = payHTML(ty, "");
+      const fm = formMetin(ty), vl = $("#vendLbl"); if (vl) vl.textContent = fm.kim;
+      const fv = $("#f_vendor"); if (fv) fv.placeholder = fm.kimOrn; const fd = $("#f_desc"); if (fd) fd.placeholder = fm.acOrn;
+      const qb = $("#quickBox"); if (qb && !S.editing) qb.innerHTML = ty === "out" || ty === "in" ? quickHTML(ty) : "";
+      $("#sh").textContent = sheetTitle(!!S.editing, ty === "in", false, ty); updFx(); return;
+    }
+    if (tg.id === "f_iadeOf" && tg.value) { const o = S.items.find(x => x.id === tg.value); if (o) { const fc = $("#f_cat"); if (fc) { fc.value = K.catLabel(o.cat); S.catTouched = true; } const fh = $("#f_hesap"), h = K.hesapBul(S.set, K.hesapOf(o)); if (fh && h && h.durum === "aktif") fh.value = h.id; const fv = $("#f_vendor"); if (fv && !fv.value) fv.value = o.vendor || ""; } return; }
+    if (tg.id === "f_cur") { const cur = tg.value, PB = K.paraKodu(); const hk = cur !== PB ? K.hatirlananKur(S.set, cur) : null; const fr = $("#f_rate"); S.fxKaynak = hk ? { kaynak: hk.kaynak, tarih: hk.tarih } : null; if (fr) fr.value = hk ? K.dec(hk.kur) : ""; updFx(); updLt(); resmiKur(); if (cur !== PB && fr && !fr.value) fr.focus(); return; }
     if (tg.id === "periodSel") { S.period = tg.value; render(); return; }
     if (tg.id === "catSel") { S.cat = tg.value; render(); return; }
     if (tg.id === "file") { handleFile(tg.files[0]); tg.value = ""; return; }
     if (tg.id === "restoreFile") { restoreFile(tg.files[0]); tg.value = ""; return; }
     if (tg.id === "f_photo") { pickPhoto(tg.files[0]); return; }
     if (tg.id === "sheetSel") { S.imp.sheet = tg.value; if (tg.value !== "__all") loadSingle(tg.value); S.imp.setOp = null; runParse(); render(); return; }
-    if (tg.id === "hdrSel") { const I = S.imp; I.hdr = +tg.value; I.headers = headersOf(I.raw, I.hdr); I.map = guessMap(I.headers); runParse(); render(); return; }
+    if (tg.id === "hdrSel") { const I = S.imp; I.hdr = +tg.value; I.headers = headersOf(I.raw, I.hdr); I.map = mapFor(I.sheet, I.raw, I.hdr); runParse(); render(); return; }
     if (tg.dataset && tg.dataset.map) { S.imp.map[tg.dataset.map] = +tg.value; runParse(); render(); return; }
-    if (tg.id === "setOp") { S.imp.setOp = tg.checked; render(); return; }
+    if (tg.id === "setOp") { S.imp.setOp = tg.checked && !(S.set.closed || []).length; runParse(); render(); return; }
   });
   ["dragover", "dragenter"].forEach(ev => document.addEventListener(ev, e => { const d = e.target.closest && e.target.closest("#drop"); if (d) { e.preventDefault(); d.classList.add("over"); } }));
   document.addEventListener("dragleave", e => { const d = e.target.closest && e.target.closest("#drop"); if (d) d.classList.remove("over"); });
@@ -1614,7 +2005,7 @@
     const d = new Date(), u = $("#saatUtc"), y = $("#saatYerel"), f = $("#saatFark");
     if (u) u.textContent = iki(d.getUTCHours()) + ":" + iki(d.getUTCMinutes()) + ":" + iki(d.getUTCSeconds());
     if (y) y.textContent = iki(d.getHours()) + ":" + iki(d.getMinutes()) + ":" + iki(d.getSeconds());
-    const tr = $("#saatTarih"); if (tr) { const v = d.toLocaleDateString(K.lang === "en" ? "en-GB" : "tr-TR", { day: "numeric", month: "long", year: "numeric", weekday: "short" }); if (tr.textContent !== v) tr.textContent = v; }
+    const tr = $("#saatTarih"); if (tr) { const v = d.toLocaleDateString(K.loc, { day: "numeric", month: "long", year: "numeric", weekday: "short" }); if (tr.textContent !== v) tr.textContent = v; }
     if (f) { const m = -d.getTimezoneOffset(), h = Math.trunc(Math.abs(m) / 60), dk = Math.abs(m) % 60; f.textContent = "UTC" + (m < 0 ? "−" : "+") + h + (dk ? ":" + iki(dk) : ""); }
   }
   // live free-market rates and gold from Trunçgil Finans (free, no key, updated every few minutes);
@@ -1633,7 +2024,7 @@
       return { kaynak: "Trunçgil Finans", canli: true, saat: m ? m[2] : "", tarih: m ? m[1] : "", kurlar };
     } finally { clearTimeout(zaman); }
   }
-  const kurSayi = (v, ondalik) => new Intl.NumberFormat(K.lang === "en" ? "en-GB" : "tr-TR", { minimumFractionDigits: ondalik, maximumFractionDigits: ondalik }).format(v);
+  const kurSayi = (v, ondalik) => new Intl.NumberFormat(K.loc, { minimumFractionDigits: ondalik, maximumFractionDigits: ondalik }).format(v);
   function kurCiz() {
     const kap = $("#kurKay"), don = $("#kurDon"), y = S.kur;
     if (!kap || !don) return;
@@ -1665,7 +2056,8 @@
   // (in English, short joining words stay small: "Terms of Use and Privacy")
   const TR_KUCUK = new Set(["ve", "veya", "ile", "ya", "ki", "de", "da", "mi", "mı", "mu", "mü"]);   // Turkish titles keep conjunctions and the question particle lowercase
   const EN_KUCUK = new Set(["a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "of", "on", "or", "the", "to", "with"]);
-  const basHarfli = m => m.replace(/(^|[\s(“"/–-])(\p{Ll})([^\s]*)/gu, (x, on, h, kalan, yer) => /\p{Lu}/u.test(kalan) || (yer > 0 && (K.lang === "en" ? EN_KUCUK : TR_KUCUK).has(h + kalan.replace(/[^\p{L}]/gu, ""))) ? x : on + h.toLocaleUpperCase(K.lang === "en" ? "en" : "tr") + kalan);
+  // only Turkish and English headings are written this way; the other languages keep the translator's capitals
+  const basHarfli = m => K.lang !== "tr" && K.lang !== "en" ? m : m.replace(/(^|[\s(“"/–-])(\p{Ll})([^\s]*)/gu, (x, on, h, kalan, yer) => /\p{Lu}/u.test(kalan) || (yer > 0 && (K.lang === "en" ? EN_KUCUK : TR_KUCUK).has(h + kalan.replace(/[^\p{L}]/gu, ""))) ? x : on + h.toLocaleUpperCase(K.lang === "en" ? "en" : "tr") + kalan);
   function basliklar(kok) {
     const els = kok.matches && kok.matches(BASLIK) ? [kok] : [];
     if (kok.querySelectorAll) els.push(...kok.querySelectorAll(BASLIK));
@@ -1744,8 +2136,9 @@
   /* ---------------- start ---------------- */
   (async () => {
     saatYaz(); setInterval(saatYaz, 1000);
+    if (window.KJ_FILO) KJ_FILO.kur({ S, api, render, toast, reload, esc, t, applyData, closeSheet });
     applyLang(); render();
-    try { await swHazir(); applyData(await api("api/veri")); S.mode = "live"; }
+    try { await swHazir(); if (window.KJ_FILO) await KJ_FILO.listeAl(); applyData(await api("api/veri")); S.mode = "live"; }
     catch (e) { S.mode = "error"; S.bootErr = e.message; }
     render();
     const basla = () => { if (S.mode === "live" && needTerms()) openTerms("accept"); else if (S.mode === "live") senkKur(); };

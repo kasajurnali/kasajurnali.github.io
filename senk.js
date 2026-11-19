@@ -8,11 +8,14 @@
 "use strict";
 (function (g) {
   const K = g.KJ;
+  // Several boats (tekne.js): the first boat's book stays kasa-verisi.json; further boats are kasa-verisi-<id>.json;
+  // the list of boats and the company's details are tekneler.json. Every boat is merged on its own with KJ.birlestir.
+  const INDEKS = "tekneler.json", ANA = "ana";
   const DOSYA = "kasa-verisi.json", KLASOR = "Kasa Jurnali", KLASOR_TUR = "application/vnd.google-apps.folder";
   const enc = encodeURIComponent;
   const O = {};                 // set by kur(): ortam, api, ham, fotoURL, cihaz, onDurum, onYerelDegisti, onBilgi
   const S = { hazir: false, bagli: false, hesap: "", durum: "kapali", hata: "", kod: "", son: null, calisiyor: false, tekrar: false,
-    sonYerelRev: null, sonUzakSurum: null, sonFoto: 0, zaman: null, ilk: true, dosyaId: null, sonListe: 0,
+    tk: {}, ix: {}, sonFoto: 0, zaman: null, ilk: true, klasorSon: 0,
     lisansAcik: false, lisans: null, lisansSon: 0, lisansHata: "" };
   const GUN = 86400000, LISANS_ARALIK = 6 * 3600000, CEVRIMDISI_SURE = 14 * GUN;
 
@@ -183,24 +186,25 @@
     const y = await (await istekOk("POST", "drive/v3/files?fields=id", JSON.stringify({ name: KLASOR, mimeType: KLASOR_TUR, description: "Yachting Jurnal kayıtları ve fiş fotoğrafları. Silmeyin ya da adını değiştirmeyin." }), "application/json")).json();
     return (S.klasorId = y.id);
   }
-  const defterDosyalari = async () => { const k = await klasor(); return (await gjson("GET", "drive/v3/files?spaces=drive&pageSize=20&orderBy=createdTime&q=" + enc("name='" + DOSYA + "' and '" + k + "' in parents and trashed=false") + "&fields=" + enc("files(id,version,createdTime)"))).files || []; };
-  async function defterOku(id) {
+  const defterDosyalari = async (ad) => { const k = await klasor(); return (await gjson("GET", "drive/v3/files?spaces=drive&pageSize=20&orderBy=createdTime&q=" + enc("name='" + (ad || DOSYA) + "' and '" + k + "' in parents and trashed=false") + "&fields=" + enc("files(id,version,createdTime)"))).files || []; };
+  async function defterOku(id, indeks) {
     const r = await istekOk("GET", "drive/v3/files/" + id + "?alt=media");
     const d = JSON.parse(await r.text());
-    if (!d || !Array.isArray(d.kayitlar)) throw hata(K.t("Google Drive’daki kayıt dosyası okunamadı."), "bozuk");
+    if (!d || !(indeks ? Array.isArray(d.tekneler) : Array.isArray(d.kayitlar))) throw hata(K.t("Google Drive’daki kayıt dosyası okunamadı."), "bozuk");
     return d;
   }
-  async function defterYaz(id, veri) {
+  async function defterYaz(id, veri, ad) {
     const govde = JSON.stringify(veri);
     if (id) return (await istekOk("PATCH", "upload/drive/v3/files/" + id + "?uploadType=media&fields=id,version", govde, "application/json")).json();
-    const mp = cokParca({ name: DOSYA, parents: [await klasor()], mimeType: "application/json" }, govde, "application/json");
+    const mp = cokParca({ name: ad || DOSYA, parents: [await klasor()], mimeType: "application/json" }, govde, "application/json");
     return (await istekOk("POST", "upload/drive/v3/files?uploadType=multipart&fields=id,version", mp.govde, mp.tur)).json();
   }
 
   /* ---------------- photos: each one travels once, in whichever direction it is missing ---------------- */
   async function fotolar(D) {
     const k = await klasor();
-    const gerekli = new Set((D.kayitlar || []).map(e => e.photo).filter(x => typeof x === "string" && /^[a-f0-9]{24,40}$/.test(x)));
+    const arsiv = Object.values(D.silinenKayitlar || {}).map(x => x && x.kayit || {});   // deleted entries can be restored, with their photos (gecmis.js)
+    const gerekli = new Set([...(D.kayitlar || []), ...arsiv].map(e => e.photo).filter(x => typeof x === "string" && /^[a-f0-9]{24,40}$/.test(x)));
     const yerel = new Set((((await O.api("api/fotolar")) || {}).ids) || []);
     const uzak = new Map();
     let sayfa = "";
@@ -271,6 +275,77 @@
   }
 
   /* ---------------- one synchronisation ---------------- */
+  // the copies of one file in Drive. Usually one cheap question is enough ("has the file changed?"); the full list
+  // (which also finds a second copy created by two devices at the same moment) is asked at the start and every half hour.
+  async function dosyalarBul(ad, st) {
+    let dosyalar = null;
+    if (st.dosyaId && !S.ilk && Date.now() - st.sonListe < 30 * 60000) {
+      const r = await T().istek("GET", "drive/v3/files/" + enc(st.dosyaId) + "?fields=" + enc("id,version,trashed,createdTime"));
+      if (r.ok) { const f = await r.json(); if (!f.trashed) dosyalar = [f]; }
+      else if (r.status !== 404) await istekOk("GET", "drive/v3/files/" + enc(st.dosyaId) + "?fields=id");   // reports the error
+    }
+    if (!dosyalar) { dosyalar = await defterDosyalari(ad); st.sonListe = Date.now(); }
+    st.dosyaId = dosyalar[0] ? dosyalar[0].id : null;
+    return dosyalar;
+  }
+  // the list of boats: merged like a book (every boat on its own, newest change wins)
+  async function indeksEsitle(sebep) {
+    const st = S.ix;
+    for (let deneme = 0; ; deneme++) {
+      let yerel;
+      try { yerel = await O.api("api/tekneler"); }
+      catch (e) { if (e.status === 404) return { indeks: K.tekneIndeksi(null), degisti: false }; throw e; }   // a program without boats
+      const dosyalar = await dosyalarBul(INDEKS, st), ana = dosyalar[0] || null;
+      if (ana && dosyalar.length === 1 && String(ana.version) === st.sonUzakSurum && yerel.rev === st.sonYerelRev && sebep !== "elle") return { indeks: K.tekneIndeksi(yerel.indeks), degisti: false };
+      let uzak = null;
+      for (const f of dosyalar) { const d = await defterOku(f.id, true); uzak = uzak ? K.indeksBirlestir(uzak, d) : d; }
+      const birlesik = uzak ? K.indeksBirlestir(yerel.indeks, uzak) : K.tekneIndeksi(yerel.indeks);
+      let rev = yerel.rev, degisti = false;
+      if (!K.ayniIndeks(birlesik, yerel.indeks)) {
+        try { rev = (await O.api("api/tekneler", { method: "POST", json: { indeks: birlesik, taban: yerel.rev } })).rev; degisti = true; }
+        catch (e) { if (e.status === 409 && deneme < 6) continue; throw e; }
+      }
+      let surum = ana ? String(ana.version) : null;
+      if (uzak ? (dosyalar.length > 1 || !K.ayniIndeks(birlesik, uzak)) : !K.indeksBos(birlesik)) {   // one boat and no company name: no file needed
+        const r = await defterYaz(ana && ana.id, Object.assign({ uygulama: "Kasa Jurnali", kaydedilme: new Date().toISOString(), cihaz: O.cihaz || "" }, birlesik), INDEKS);
+        surum = String(r.version); if (r.id) st.dosyaId = r.id;
+        for (const f of dosyalar.slice(1)) await T().istek("DELETE", "drive/v3/files/" + f.id).catch(() => { });
+      }
+      st.sonYerelRev = rev; st.sonUzakSurum = surum;
+      return { indeks: birlesik, degisti };
+    }
+  }
+  // one boat's book: this device's copy and the one in Drive are merged and written back to both
+  async function tekneEsitle(tid, sebep) {
+    const st = S.tk[tid] || (S.tk[tid] = { dosyaId: null, sonYerelRev: null, sonUzakSurum: null, sonListe: 0 });
+    const H = { "X-KJ-Tekne": tid }, ad = K.tekneDosyaAdi ? K.tekneDosyaAdi(tid) : DOSYA;
+    for (let deneme = 0; ; deneme++) {
+      const yerel = await O.api("api/veri", { headers: H });
+      const dosyalar = await dosyalarBul(ad, st), ana = dosyalar[0] || null;
+      if (ana && dosyalar.length === 1 && String(ana.version) === st.sonUzakSurum && yerel.rev === st.sonYerelRev && sebep !== "elle") return { defter: yerel.defter };   // nothing changed anywhere
+      let uzak = null;
+      for (const f of dosyalar) { const d = await defterOku(f.id); uzak = uzak ? K.birlestir(d, uzak) : d; }   // two devices may have created the file at the same moment
+      const birlesik = K.birlestir(yerel.defter, uzak);
+      let rev = yerel.rev, degisti = false;
+      if (!K.ayniMi(birlesik, yerel.defter)) {
+        try { rev = (await O.api("api/islem", { method: "POST", json: { islem: "senk", defter: birlesik, taban: yerel.rev }, headers: H })).rev; degisti = true; }
+        catch (e) { if (e.status === 409 && deneme < 6) continue; throw e; }   // a change was saved meanwhile: start again with it
+      }
+      let surum = ana ? String(ana.version) : null;
+      if (!uzak || dosyalar.length > 1 || !K.ayniMi(birlesik, uzak)) {
+        const r = await defterYaz(ana && ana.id, K.uzakHali(birlesik, O.cihaz), ad);
+        surum = String(r.version); if (r.id) st.dosyaId = r.id;
+        for (const f of dosyalar.slice(1)) await T().istek("DELETE", "drive/v3/files/" + f.id).catch(() => { });
+      }
+      let ozet = null;
+      if (S.ilk) {
+        const yIds = new Set((yerel.defter.kayitlar || []).map(e => e.id)), uIds = new Set(((uzak || {}).kayitlar || []).map(e => e.id));
+        ozet = { gelen: birlesik.kayitlar.filter(e => !yIds.has(e.id)).length, giden: birlesik.kayitlar.filter(e => !uIds.has(e.id)).length, toplam: birlesik.kayitlar.length };
+      }
+      st.sonYerelRev = rev; st.sonUzakSurum = surum;
+      return { defter: birlesik, degisti, uzakDegisti: surum !== (ana && String(ana.version)), ozet };
+    }
+  }
   function durumYaz(d) { S.durum = d; if (O.onDurum) O.onDurum(bilgi()); }
   async function esitle(sebep) {
     if (!izinli()) return;
@@ -281,46 +356,25 @@
     if (gorunur) durumYaz("calisiyor");
     let yerelDegisti = false, ozet = null;
     try {
-      for (let deneme = 0; ; deneme++) {
-        const yerel = await O.api("api/veri");
-        // Usually one cheap question is enough ("has the file in Drive changed?"); the full list (which also finds a
-        // second copy created by two devices at the same moment) is asked at the start and every half hour.
-        let dosyalar = null;
-        if (S.dosyaId && !S.ilk && Date.now() - S.sonListe < 30 * 60000) {
-          const r = await T().istek("GET", "drive/v3/files/" + enc(S.dosyaId) + "?fields=" + enc("id,version,trashed,createdTime"));
-          if (r.ok) { const f = await r.json(); if (!f.trashed) dosyalar = [f]; }
-          else if (r.status !== 404) await istekOk("GET", "drive/v3/files/" + enc(S.dosyaId) + "?fields=id");   // reports the error
-        }
-        if (!dosyalar) { S.klasorId = null; dosyalar = await defterDosyalari(); S.sonListe = Date.now(); }
-        const ana = dosyalar[0] || null;
-        S.dosyaId = ana ? ana.id : null;
-        if (ana && dosyalar.length === 1 && String(ana.version) === S.sonUzakSurum && yerel.rev === S.sonYerelRev && sebep !== "elle") break;   // nothing changed anywhere
-        let uzak = null;
-        for (const f of dosyalar) { const d = await defterOku(f.id); uzak = uzak ? K.birlestir(d, uzak) : d; }   // two devices may have created the file at the same moment
-        const birlesik = K.birlestir(yerel.defter, uzak);
-        let rev = yerel.rev;
-        if (!K.ayniMi(birlesik, yerel.defter)) {
-          try { rev = (await O.api("api/islem", { method: "POST", json: { islem: "senk", defter: birlesik, taban: yerel.rev } })).rev; yerelDegisti = true; }
-          catch (e) { if (e.status === 409 && deneme < 6) continue; throw e; }   // a change was saved meanwhile: start again with it
-        }
-        let surum = ana ? String(ana.version) : null;
-        if (!uzak || dosyalar.length > 1 || !K.ayniMi(birlesik, uzak)) {
-          const r = await defterYaz(ana && ana.id, K.uzakHali(birlesik, O.cihaz));
-          surum = String(r.version); if (r.id) S.dosyaId = r.id;
-          for (const f of dosyalar.slice(1)) await T().istek("DELETE", "drive/v3/files/" + f.id).catch(() => { });
-        }
-        if (S.ilk) {
-          const yIds = new Set((yerel.defter.kayitlar || []).map(e => e.id)), uIds = new Set(((uzak || {}).kayitlar || []).map(e => e.id));
-          ozet = { gelen: birlesik.kayitlar.filter(e => !yIds.has(e.id)).length, giden: birlesik.kayitlar.filter(e => !uIds.has(e.id)).length, toplam: birlesik.kayitlar.length };
-        }
-        S.sonYerelRev = rev; S.sonUzakSurum = surum;
-        if (yerelDegisti || S.ilk || surum !== (ana && String(ana.version)) || Date.now() - S.sonFoto > 10 * 60000) {
-          const f = await fotolar(birlesik); S.sonFoto = Date.now();
-          if (ozet) Object.assign(ozet, { fotoGelen: f.gelen, fotoGiden: f.giden });
-          try { await fisArsivi(birlesik, f.uzak); } catch (e) { if (e.kod === "izin") throw e; console.warn("fiş arşivi:", e.message); }   // the archive never stops a synchronisation
-          if (f.gelen) yerelDegisti = true;
-        }
-        break;
+      if (S.ilk || Date.now() - S.klasorSon > 30 * 60000) { S.klasorId = null; S.klasorSon = Date.now(); }
+      const ix = await indeksEsitle(sebep);
+      if (ix.degisti) yerelDegisti = true;
+      const tumu = {};
+      let uzakDegisti = false;
+      for (const t of ix.indeks.tekneler) {
+        const r = await tekneEsitle(t.id, sebep);
+        tumu[t.id] = r.defter || {};   // archived boats too: their photos stay
+        if (r.degisti) yerelDegisti = true;
+        if (r.uzakDegisti) uzakDegisti = true;
+        if (r.ozet) { ozet = ozet || { gelen: 0, giden: 0, toplam: 0 }; for (const k in r.ozet) ozet[k] += r.ozet[k]; }
+      }
+      // photos are shared by the boats: one pass over every boat's entries (so no boat's photo is taken for unused)
+      if (yerelDegisti || S.ilk || uzakDegisti || Date.now() - S.sonFoto > 10 * 60000) {
+        const D = K.filoFotoKaynagi ? K.filoFotoKaynagi(tumu) : { kayitlar: Object.values(tumu).flatMap(d => d.kayitlar || []) };   // entries + archives of deleted entries (T-3)
+        const f = await fotolar(D); S.sonFoto = Date.now();
+        if (ozet) Object.assign(ozet, { fotoGelen: f.gelen, fotoGiden: f.giden });
+        try { await fisArsivi(D, f.uzak); } catch (e) { if (e.kod === "izin") throw e; console.warn("fiş arşivi:", e.message); }   // the archive never stops a synchronisation
+        if (f.gelen) yerelDegisti = true;
       }
       S.son = new Date(); S.hata = ""; S.kod = "";
       if (S.ilk && ozet && O.onBilgi) O.onBilgi(ozet);
@@ -350,7 +404,7 @@
   async function bekle() {
     const r = await T().bekle();
     if (r.durum === "tamam") {
-      Object.assign(S, { bagli: true, hesap: r.hesap || "", ilk: true, sonUzakSurum: null, sonYerelRev: null, sonFoto: 0, lisans: null, lisansSon: 0 });
+      Object.assign(S, { bagli: true, hesap: r.hesap || "", ilk: true, tk: {}, ix: {}, sonFoto: 0, lisans: null, lisansSon: 0 });
       await lisansDenetle();
       esitle("ilk");
     }
@@ -385,12 +439,12 @@
   const lisansZamani = () => S.bagli && S.lisansAcik && Date.now() - S.lisansSon > (S.lisansSon ? LISANS_ARALIK : 110000);
   async function yonetim(govde) {
     const c = await T().yonetim(govde);
-    if (c.hata) throw hata({ yetki: K.t("Bu işlem için yetkiniz yok."), eposta: K.t("E-posta adresini kontrol edin."), tarih: K.t("Tarihi kontrol edin."), paket: K.t("Paketi kontrol edin."), fiyat: K.t("Fiyatı kontrol edin."), kayit: K.t("Hesap kaydı bulunamadı; uygulamayı yeniden açın."), yonetici: K.t("Yönetici hesabı uygulamadan silinemez."), yogun: K.t("Erişim sunucusu şu an çok yoğun; birkaç dakika sonra yeniden deneyin."), islem: K.t("Bu bölüm, erişim sunucusu güncellenince açılacak."), gecersiz: K.t("Google hesabı doğrulanamadı; yeniden oturum açın.") }[c.hata] || K.t("Erişim sunucusu yanıt vermedi."), c.hata);
+    if (c.hata) throw hata({ yetki: K.t("Bu işlem için yetkiniz yok."), eposta: K.t("E-posta adresini kontrol edin."), tarih: K.t("Tarihi kontrol edin."), paket: K.t("Paketi kontrol edin."), fiyat: K.t("Fiyatı kontrol edin."), kayit: K.t("Hesap kaydı bulunamadı; uygulamayı yeniden açın."), yonetici: K.t("Yönetici hesabı uygulamadan silinemez."), yogun: K.t("Erişim sunucusu şu an çok yoğun; birkaç dakika sonra yeniden deneyin."), abonelik: K.t("Abonelik bilgisi bulunamadı; kasajurnali@gmail.com adresine yazın."), islem: K.t("Bu bölüm, erişim sunucusu güncellenince açılacak."), gecersiz: K.t("Google hesabı doğrulanamadı; yeniden oturum açın.") }[c.hata] || K.t("Erişim sunucusu yanıt vermedi."), c.hata);
     return c;
   }
   async function cikis() {
     await T().cikis();
-    Object.assign(S, { bagli: false, hesap: "", durum: "kapali", hata: "", kod: "", son: null, sonUzakSurum: null, sonYerelRev: null, ilk: true, dosyaId: null, klasorId: null, sonListe: 0, lisans: null, lisansSon: 0, lisansHata: "" });
+    Object.assign(S, { bagli: false, hesap: "", durum: "kapali", hata: "", kod: "", son: null, tk: {}, ix: {}, ilk: true, klasorId: null, klasorSon: 0, lisans: null, lisansSon: 0, lisansHata: "" });
     if (O.onDurum) O.onDurum(bilgi());
   }
   const bilgi = () => ({ hazir: S.hazir, zorunlu: S.zorunlu, bagli: S.bagli, hesap: S.hesap, durum: S.durum, hata: S.hata, kod: S.kod, son: S.son, calisiyor: S.calisiyor,

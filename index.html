@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="kj-token" content="">
-<meta name="kj-surum" content="2.5.0">
+<meta name="kj-surum" content="3.0.0">
 <meta name="kj-dil" content="">
 <meta name="kj-ortam" content="web">
 <link rel="manifest" href="manifest.webmanifest">
@@ -71,6 +71,30 @@ header.top{padding-block:18px 16px}
 h1{color:var(--on-hull);font-family:var(--f-display);font-weight:700;font-size:clamp(26px,5vw,36px);line-height:1.05;margin:0;letter-spacing:-.005em}
 .period{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:12px;letter-spacing:.1em;text-transform:uppercase;font-weight:600;color:var(--on-hull-2)}
 select.pill{letter-spacing:0;text-transform:none;appearance:none;-webkit-appearance:none;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:8px 34px 8px 14px;font-size:14px;color:var(--ink);font-weight:600;background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 18px) 55%,calc(100% - 13px) 55%;background-size:5px 5px;background-repeat:no-repeat;max-width:100%}
+/* several boats (tekne.js) */
+select.tekneSec{font-size:13px;padding:5px 30px 5px 12px;max-width:min(320px,70vw)}
+ul.tklist{border-top:1px solid var(--line);border-radius:10px;margin:8px 0}
+.tkrow{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+.tkad{display:flex;flex-wrap:wrap;align-items:center;gap:6px;flex:1 1 220px;min-width:0}
+.tkad input,.tkekle input{flex:1 1 180px;min-width:0;border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:10px;padding:9px 11px;font-size:15px}
+.tkekle{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.tablo{overflow-x:auto}
+table.sirkett{width:100%;border-collapse:collapse;font-size:14px}
+table.sirkett th,table.sirkett td{padding:8px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+table.sirkett td.r,table.sirkett th:not(:first-child){text-align:right;font-variant-numeric:tabular-nums}
+table.sirkett td.neg{color:#B3261E}
+.tkbars{display:grid;gap:8px}
+.tkbar{display:grid;grid-template-columns:minmax(80px,30%) 1fr auto;gap:10px;align-items:center;font-size:14px}
+.tkbad{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tkbiz{height:12px;background:var(--sunk);border-radius:6px;overflow:hidden}
+.tkbiz i{display:block;height:100%;background:var(--accent);border-radius:6px}
+.tkbv{font-variant-numeric:tabular-nums;white-space:nowrap}
+.tkozet{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-top:10px}
+.tkk{border:1px solid var(--line);background:var(--sunk);border-radius:10px;padding:12px 14px;min-width:0}
+.tkk .lbl{display:block;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:700;margin-bottom:4px}
+.tkk .v{display:block;font-variant-numeric:tabular-nums;font-size:20px;font-weight:600;overflow-wrap:anywhere}
+.tkk .v.neg{color:#B3261E}
+.tkk .from{display:block;font-size:12px;color:var(--muted);margin-top:3px}
 .navb{width:36px;height:36px;border-radius:999px;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.06);color:var(--on-hull);display:inline-flex;align-items:center;justify-content:center;flex:none}
 .navb:disabled{opacity:.3;cursor:default}
 .navb svg{width:16px;height:16px}
@@ -119,6 +143,7 @@ nav.tabs{position:sticky;top:0;z-index:5;background:var(--bg);padding-block:12px
 .mtag{display:inline-block;vertical-align:middle;margin-left:8px;font-family:var(--f-body);font-size:10.5px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--brass);border:1px solid var(--brass);border-radius:4px;padding:1px 6px}
 ul.rows{list-style:none;margin:0;padding:0;background:var(--surface);border:1px solid var(--line);border-top:0;border-radius:0 0 10px 10px;overflow:hidden}
 .row{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:10px 12px 10px 8px;border-bottom:1px solid var(--line);width:100%;text-align:left;background:transparent;border-left:0;border-right:0;border-top:0;font-size:15px}
+.row.hrow{grid-template-columns:minmax(0,1fr) auto;padding-left:12px}
 li:last-child>.row{border-bottom:0}
 button.row:hover{background:var(--sunk)}
 .row .d{font-family:var(--f-mono);font-size:12px;color:var(--muted);line-height:1.15;text-transform:uppercase}
@@ -241,6 +266,8 @@ table.pv td.g{color:var(--ok)}
 .ph .thumb{width:64px;height:64px;border-radius:10px;border:1px solid var(--line);background:var(--sunk);cursor:zoom-in;padding:0;overflow:hidden}
 .ph .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .ph .hint{font-size:12.5px;color:var(--muted)}
+.gecmis summary{cursor:pointer;font-weight:600;font-size:14px}.gecmisl{margin:8px 0 4px;padding-left:18px;font-size:13px}.gecmisl ul{margin:2px 0 6px;padding-left:16px;color:var(--muted)}.gecmis .hint{font-size:12.5px;color:var(--muted)}
+.silrow{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line,#ddd)}.silrow .t{flex:1;display:flex;flex-direction:column;min-width:0}.silrow .mt{font-size:12.5px;color:var(--muted)}
 .sheet .acts{display:flex;gap:10px;justify-content:space-between;flex-wrap:wrap;margin-top:18px}
 .sheet .acts .r{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
 .err-t{color:var(--danger);font-size:13px;min-height:1em;margin-top:8px}
@@ -272,6 +299,10 @@ table.pv td.g{color:var(--ok)}
 .sheet .langsw{border-color:var(--line)}
 .sheet .langsw button{color:var(--muted)}
 .sheet .langsw button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.langsw select{border:0;background:transparent;color:var(--on-hull);font-weight:700;font-size:11.5px;line-height:1;letter-spacing:.08em;padding:6px 8px;cursor:pointer;appearance:auto}
+.langsw select option{color:#0E2740;background:#fff}
+.sheet .langsw select,.giris .langsw select{color:var(--ink)}
+.langseg{flex-wrap:wrap}.langseg label{flex:1 1 auto;min-width:6.5em}
 .terms .thead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
 .terms .thead h3{margin:0}
 .terms .lead{color:var(--muted);font-size:14px;margin:0 0 12px}
@@ -483,8 +514,8 @@ html.web body{-webkit-tap-highlight-color:transparent}
 </div></div>
 <div class="band"><div class="wrap">
   <header class="top">
-    <div class="flag"><span class="ics" title="K · A · S · A — uluslararası işaret sancakları" data-t-title="K · A · S · A — uluslararası işaret sancakları" aria-hidden="true"><i class="k"></i><i class="a"></i><i class="s"></i><i class="a"></i></span><span id="bookName">Günlük harcama ve kasa takibi</span>
-      <span class="savewrap"><span class="langsw" role="group" aria-label="Dil / Language"><button type="button" data-lang="tr" aria-pressed="true">TR</button><button type="button" data-lang="en" aria-pressed="false">EN</button></span><button type="button" class="senkb" id="senkBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5z"/></svg><span id="senkLbl"></span></button><span class="savest" id="saveState">Açılıyor…</span><button class="savebtn busy" id="saveNow" title="Kaydet (Ctrl+S)" data-t-title="Kaydet (Ctrl+S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg><span id="saveLbl" data-t>Kaydet</span></button></span></div>
+    <div class="flag"><span class="ics" title="K · A · S · A — uluslararası işaret sancakları" data-t-title="K · A · S · A — uluslararası işaret sancakları" aria-hidden="true"><i class="k"></i><i class="a"></i><i class="s"></i><i class="a"></i></span><select id="tekneSec" class="pill tekneSec" hidden></select><span id="bookName">Günlük harcama ve kasa takibi</span>
+      <span class="savewrap"><span class="langsw"><select name="lang" aria-label="Dil / Language"><option value="tr" title="Türkçe">TR</option><option value="en" title="English">EN</option><option value="fr" title="Français">FR</option><option value="it" title="Italiano">IT</option><option value="es" title="Español">ES</option><option value="de" title="Deutsch">DE</option><option value="el" title="Ελληνικά">EL</option></select></span><button type="button" class="senkb" id="senkBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.6 9.1 4.75 4.75 0 0 0 7 18.5z"/></svg><span id="senkLbl"></span></button><span class="savest" id="saveState">Açılıyor…</span><button class="savebtn busy" id="saveNow" title="Kaydet (Ctrl+S)" data-t-title="Kaydet (Ctrl+S)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h11l3 3v13H5z"/><path d="M8 4v5h7V4M8 20v-6h8v6"/></svg><span id="saveLbl" data-t>Kaydet</span></button></span></div>
     <div class="headrow">
       <div class="brand"><button type="button" class="menub" id="menuBtn" aria-label="Menü" title="Menü" data-t-aria="Menü" data-t-title="Menü"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button><svg class="rose" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18.5" fill="none" stroke="currentColor" stroke-opacity=".45"/><circle cx="20" cy="20" r="14" fill="none" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="1 2.2"/><path d="M20 2 L23 17 L38 20 L23 23 L20 38 L17 23 L2 20 L17 17 Z" fill="currentColor" fill-opacity=".35"/><path d="M20 2 L23 17 L20 20 L17 17 Z M38 20 L23 23 L20 20 L23 17 Z" fill="currentColor"/><path d="M20 38 L17 23 L20 20 L23 23 Z M2 20 L17 17 L20 20 L17 23 Z" fill="currentColor" fill-opacity=".6"/><circle cx="20" cy="20" r="2" fill="#0E2740"/></svg><h1>Yachting Jurnal</h1></div>
       <div class="period">
@@ -511,8 +542,17 @@ html.web body{-webkit-tap-highlight-color:transparent}
 <div id="sheetHost"></div>
 <div id="toastHost" aria-live="polite"></div>
 <script src="i18n.js"></script>
+<script src="dil/fr.js"></script>
+<script src="dil/it.js"></script>
+<script src="dil/es.js"></script>
+<script src="dil/de.js"></script>
+<script src="dil/el.js"></script>
 <script src="yasal.js"></script>
 <script src="hesap.js"></script>
+<script src="gecmis.js"></script>
+<script src="paket.js"></script>
+<script src="konsolide.js"></script>
+<script src="tekne.js"></script>
 <script src="google.js"></script>
 <script src="senk.js"></script>
 <script src="app.js"></script>

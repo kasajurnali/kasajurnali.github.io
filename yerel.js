@@ -32,8 +32,12 @@
   const sirayla = f => { const p = kuyruk.then(f, f); kuyruk = p.catch(() => { }); return p; };
 
   const bos = () => ({ uygulama: "Kasa Jurnali", surum: 2, kaydedilme: "", ayarlar: {}, kayitlar: [], silinenler: {} });
-  async function defterAl() {
-    const d = await al("kv", "defter"), rev = (await al("kv", "rev")) || 0;
+  // Several boats (tekne.js): the first boat ("ana") keeps the keys it always had ("defter", "rev");
+  // further boats use "defter:<id>" and "rev:<id>". The list of boats is "tekneler" (+ "tekneler-rev").
+  const ANA = "ana", TEKNE = /^[a-z0-9]{1,32}$/;
+  const anahtar = (ad, tekne) => !tekne || tekne === ANA ? ad : ad + ":" + tekne;
+  async function defterAl(tekne) {
+    const d = await al("kv", anahtar("defter", tekne)), rev = (await al("kv", anahtar("rev", tekne))) || 0;
     const df = Object.assign(bos(), d || {});
     if (!df.ayarlar || typeof df.ayarlar !== "object") df.ayarlar = {};
     if (!Array.isArray(df.kayitlar)) df.kayitlar = [];
@@ -41,17 +45,43 @@
     return { df, rev, var: !!d };
   }
   const gun = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
-  async function yaz(df, rev, onceki) {
-    // a copy of the book as it was before today's first change; the newest 30 days are kept
-    const ad = "kasa-verisi-" + gun();
+  async function yaz(df, rev, onceki, tekne) {
+    // a copy of the book as it was before today's first change; the newest 30 days are kept (for each boat)
+    const on = !tekne || tekne === ANA ? "kasa-verisi-" : "tekne-" + tekne + "-", ad = on + gun();
     if (onceki && !(await al("yedek", ad))) {
       await koy("yedek", ad, JSON.stringify(onceki));
-      const ys = (await anahtarlar("yedek")).filter(k => String(k).startsWith("kasa-verisi-")).sort().reverse();
+      const ys = (await anahtarlar("yedek")).filter(k => String(k).startsWith(on)).sort().reverse();
       for (const k of ys.slice(30)) await sil("yedek", k);
     }
     df.uygulama = "Kasa Jurnali"; df.surum = 2; df.kaydedilme = new Date().toISOString();
-    await tx("kv", "readwrite", s => { s.put(df, "defter"); s.put(rev + 1, "rev"); });
+    await tx("kv", "readwrite", s => { s.put(df, anahtar("defter", tekne)); s.put(rev + 1, anahtar("rev", tekne)); });
     return rev + 1;
+  }
+
+  /* ---------------- the list of boats (same rules as app/tekne.go) ---------------- */
+  const varsayilanIndeks = () => ({ surum: 1, sirket: { ad: "" }, tekneler: [{ id: ANA, ad: "", sira: 0, durum: "aktif" }] });
+  async function indeksAl() { return { x: (await al("kv", "tekneler")) || varsayilanIndeks(), rev: (await al("kv", "tekneler-rev")) || 0 }; }
+  function indeksDogrula(x) {
+    if (!x || typeof x !== "object" || !Array.isArray(x.tekneler) || x.tekneler.length > 200) throw new Hata("geçersiz istek");
+    const gor = new Set(), l = [];
+    for (const t of x.tekneler) {
+      if (!t || !TEKNE.test(t.id || "") || gor.has(t.id)) throw new Hata("geçersiz tekne kimliği");
+      if (t.durum !== "aktif" && t.durum !== "arsiv") throw new Hata("geçersiz tekne durumu");
+      const ad = String(t.ad || "").trim(); if (ad.length > 120) throw new Hata("geçersiz tekne adı");
+      gor.add(t.id); l.push(Object.assign({ id: t.id, ad, sira: +t.sira || 0, durum: t.durum }, t.zaman ? { zaman: String(t.zaman).slice(0, 40) } : {}));
+    }
+    if (!gor.has(ANA)) l.unshift({ id: ANA, ad: "", sira: 0, durum: "aktif" });
+    l.sort((a, b) => a.sira - b.sira);
+    const s = x.sirket && typeof x.sirket === "object" ? x.sirket : {}, sad = String(s.ad || "").trim();
+    if (sad.length > 200) throw new Hata("geçersiz şirket adı");
+    return { surum: 1, sirket: Object.assign({ ad: sad }, s.zaman ? { zaman: String(s.zaman).slice(0, 40) } : {}), tekneler: l };
+  }
+  // the boat a request is for ("ana" when none); null for a boat that is not in the list
+  async function tekneOf(istek, url) {
+    const id = istek.headers.get("X-KJ-Tekne") || (url && url.searchParams.get("tekne")) || ANA;
+    if (id === ANA) return ANA;
+    if (!TEKNE.test(id)) return null;
+    return (await indeksAl()).x.tekneler.some(t => t.id === id) ? id : null;
   }
 
   /* ---------------- the same rules as app/veri.go ---------------- */
@@ -60,23 +90,31 @@
   class Hata extends Error { constructor(m, kod, durum) { super(m); this.kod = kod || ""; this.durum = durum || 500; } }
   function dogrula(k) {
     if (!k || typeof k !== "object" || !KIMLIK.test(k.id || "")) throw new Hata("geçersiz kayıt kimliği");
-    if (k.type !== "in" && k.type !== "out") throw new Hata("geçersiz kayıt türü");
+    if (!["in", "out", "tr", "iade"].includes(k.type)) throw new Hata("geçersiz kayıt türü");
     if (typeof k.amount !== "number" || !isFinite(k.amount)) throw new Hata("tutar sayı olmalı");
     if (typeof k.date !== "string" || k.date.length !== 10) throw new Hata("tarih eksik");
   }
   const isoMu = z => typeof z === "string" && !isNaN(Date.parse(z)) && /^\d{4}-\d{2}-\d{2}T/.test(z);
+  // deleted entries older than 400 days leave the archive; at most the newest 2000 are kept (same rule as gecmis.js and veri.go)
+  function arsivBuda(a) {
+    const sinir = Date.now() - 400 * 864e5;
+    const l = Object.keys(a).filter(id => { const z = Date.parse((a[id] || {}).zaman); if (isNaN(z) || z < sinir) { delete a[id]; return false; } return true; });
+    l.sort((x, y) => Date.parse(a[y].zaman) - Date.parse(a[x].zaman)).slice(2000).forEach(id => { delete a[id]; });
+  }
   function uygula(df, rev, is) {
     switch (is.islem) {
       case "kaydet": {
         dogrula(is.kayit);
         const i = df.kayitlar.findIndex(k => k.id === is.kayit.id);
         if (i >= 0) df.kayitlar[i] = is.kayit; else df.kayitlar.push(is.kayit);
+        if (df.silinenKayitlar) delete df.silinenKayitlar[is.kayit.id];   // a restored entry leaves the archive
         break;
       }
       case "sil":
         if (!KIMLIK.test(is.id || "")) throw new Hata("geçersiz kayıt kimliği");
         df.kayitlar = df.kayitlar.filter(k => k.id !== is.id);
         df.silinenler[is.id] = isoMu(is.zaman) ? is.zaman : new Date().toISOString();
+        if (is.arsiv && is.arsiv.kayit && is.arsiv.kayit.id === is.id) { df.silinenKayitlar = Object.assign({}, df.silinenKayitlar, { [is.id]: is.arsiv }); arsivBuda(df.silinenKayitlar); }
         break;
       case "senk": {
         if (!is.defter || typeof is.taban !== "number") throw new Hata("defter eksik");
@@ -85,6 +123,7 @@
         const a = Object.assign({}, is.defter.ayarlar || {});
         for (const k of YEREL) { if (k in df.ayarlar) a[k] = df.ayarlar[k]; else delete a[k]; }
         df.ayarlar = a; df.kayitlar = is.defter.kayitlar || []; df.silinenler = is.defter.silinenler || {};
+        df.silinenKayitlar = is.defter.silinenKayitlar || {};
         break;
       }
       case "ayar": {
@@ -112,6 +151,7 @@
         (is.defter.kayitlar || []).forEach(dogrula);
         df.ayarlar = is.defter.ayarlar || {}; df.kayitlar = is.defter.kayitlar || [];
         if (is.defter.silinenler) df.silinenler = is.defter.silinenler;
+        if (is.defter.silinenKayitlar) df.silinenKayitlar = is.defter.silinenKayitlar;
         break;
       default: throw new Hata("bilinmeyen işlem");
     }
@@ -127,26 +167,44 @@
     "Kaydedilemedi": "Could not save", "Fotoğraf kaydedilemedi": "The photo could not be saved", "Kayıtlar bu arada değişti; yeniden deneyin.": "The records changed meanwhile; please try again.",
     "Bu dosya bir Excel (.xlsx) dosyası değil. Eski .xls dosyalarını Excel'de açıp .xlsx olarak kaydedin.": "This file is not an Excel (.xlsx) file. Open old .xls files in Excel and save them as .xlsx.",
     "Excel dosyası okunamadı (çalışma kitabı yok).": "The Excel file could not be read (no workbook).", "Excel dosyasında okunabilir sayfa bulunamadı.": "No readable sheet was found in the Excel file.",
-    "Rapor bulunamadı": "Report not found", "geçersiz istek": "invalid request", "Bu işlem iPhone uygulamasında yok.": "This is not available in the iPhone app."
+    "Rapor bulunamadı": "Report not found", "Tekne bulunamadı": "Boat not found", "geçersiz tekne kimliği": "invalid boat id", "geçersiz tekne durumu": "invalid boat status", "geçersiz tekne adı": "invalid boat name", "geçersiz şirket adı": "invalid company name", "geçersiz istek": "invalid request", "Bu işlem iPhone uygulamasında yok.": "This is not available in the iPhone app."
   };
-  const cevir = (dil, m) => dil === "en" ? (EN[m] || m.split(": ").map(p => EN[p] || p).join(": ")) : m;
+  // the window's languages; this storage's own messages exist in Turkish and English (English for all but Turkish)
+  const DILLER = ["tr", "en", "fr", "it", "es", "de", "el"];
+  const dilOf = d => DILLER.includes(d) ? d : "";
+  const cevir = (dil, m) => dil && dil !== "tr" ? (EN[m] || m.split(": ").map(p => EN[p] || p).join(": ")) : m;
 
-  async function veri() {
-    const { df, rev, var: v } = await defterAl();
+  async function veri(tekne) {
+    const { df, rev, var: v } = await defterAl(tekne);
+    if (tekne !== ANA) {   // settings chosen on this phone (language, terms) are the same whichever boat is open
+      const ana = (await defterAl(ANA)).df.ayarlar;
+      for (const k of YEREL) { if (k in ana) df.ayarlar[k] = ana[k]; else delete df.ayarlar[k]; }
+    }
     return json({ defter: df, rev, klasor: "", dosya: "", ilk: !v, uyari: "", surum: g.KJ_SURUM || "" });
   }
-  async function islem(govde, dil) {
+  async function islem(govde, dil, tekne) {
     let is;
     try { is = JSON.parse(govde); } catch (e) { return hata(cevir(dil, "geçersiz istek"), 400); }
     return sirayla(async () => {
-      const { df, rev } = await defterAl();
+      if (tekne !== ANA && is.islem === "ayar" && is.degisen) {   // device settings go to the first boat's book
+        const yerel = {}, kalan = {};
+        for (const k in is.degisen) (YEREL.includes(k) ? yerel : kalan)[k] = is.degisen[k];
+        if (Object.keys(yerel).length) {
+          const a = await defterAl(ANA), o = JSON.parse(JSON.stringify(a.df));
+          try { uygula(a.df, a.rev, { islem: "ayar", degisen: yerel }); } catch (e) { return hata(cevir(dil, "Kaydedilemedi: " + e.message), 500); }
+          await yaz(a.df, a.rev, o, ANA);
+        }
+        is = Object.assign({}, is, { degisen: kalan });
+        if (!Object.keys(kalan).length && !Object.keys(is.damgalar || {}).length) return json({ rev: (await defterAl(tekne)).rev, zaman: new Date().toISOString() });
+      }
+      const { df, rev } = await defterAl(tekne);
       const onceki = JSON.parse(JSON.stringify(df));
       try { uygula(df, rev, is); }
       catch (e) {
         if (e.kod === "cakisma") return hata(cevir(dil, "Kayıtlar bu arada değişti; yeniden deneyin."), 409, "cakisma");
         return hata(cevir(dil, "Kaydedilemedi: " + e.message), 500);
       }
-      const yeni = await yaz(df, rev, onceki);
+      const yeni = await yaz(df, rev, onceki, tekne);
       return json({ rev: yeni, zaman: new Date().toISOString() });
     });
   }
@@ -159,13 +217,15 @@
 
   async function rapor(url, dil0) {
     const q = url.searchParams, aylar = (q.get("ay") || "").split(",").filter(a => /^\d{4}-\d{2}$/.test(a));
-    const dil = q.get("dil") === "en" ? "en" : dil0 === "en" ? "en" : "tr";
+    const dil = dilOf(q.get("dil")) || dilOf(dil0) || "tr";
     if (!aylar.length) return new Response(cevir(dil, "Rapor bulunamadı"), { status: 404 });
     const sablon = await caches.match(new URL("rapor.html", g.registration.scope).href);
     if (!sablon) return new Response("rapor.html", { status: 500 });
-    const { df } = await defterAl();
-    const veri = JSON.stringify({ defter: df, aylar, fotograflar: q.get("foto") !== "0", yazdir: false, dil, olusturma: new Date().toISOString(), token: "", surum: g.KJ_SURUM || "", ortam: "web" }).replace(/<\//g, "<\\/");
-    const T = dil === "en"
+    const tekne = q.get("tekne") || ANA;
+    if (tekne !== ANA && !(await indeksAl()).x.tekneler.some(t => t.id === tekne)) return new Response(cevir(dil, "Tekne bulunamadı"), { status: 404 });
+    const { df } = await defterAl(tekne);
+    const veri = JSON.stringify({ defter: df, aylar, fotograflar: q.get("foto") !== "0", yazdir: false, kartEkstresi: q.get("kart") !== "0", dil, olusturma: new Date().toISOString(), token: "", surum: g.KJ_SURUM || "", ortam: "web" }).replace(/<\//g, "<\\/");
+    const T = dil !== "tr"
       ? { alt: "Prepared with Yachting Jurnal · For information only; not an official accounting record.", sayfa: '"Page " counter(page) " of " counter(pages)', yazdir: "Print / PDF", geri: "‹ Back" }
       : { alt: "Yachting Jurnal ile hazırlanmıştır · Bilgi amaçlıdır; resmî muhasebe kaydı yerine geçmez.", sayfa: '"Sayfa " counter(page) " / " counter(pages)', yazdir: "Yazdır / PDF", geri: "‹ Geri" };
     let h = await sablon.text();
@@ -176,11 +236,29 @@
 
   // yanitla: answers one request of the window (path is relative to the app's address)
   async function yanitla(istek, yol, url) {
-    const m = istek.method, dil = istek.headers.get("X-KJ-Dil") === "en" ? "en" : "tr";
+    const m = istek.method, dil = dilOf(istek.headers.get("X-KJ-Dil")) || "tr";
     try {
       if (yol === "api/kimlik") return json({ uygulama: "kasa-jurnali", surum: g.KJ_SURUM || "" });
-      if (yol === "api/veri" && m === "GET") return await veri();
-      if (yol === "api/ping") return json({ rev: (await al("kv", "rev")) || 0 });
+      if (yol === "api/tekneler") {
+        if (m === "GET") { const { x, rev } = await indeksAl(); return json({ indeks: x, rev }); }
+        if (m === "POST") {
+          let b; try { b = JSON.parse(await istek.text()); } catch (e) { return hata(cevir(dil, "geçersiz istek"), 400); }
+          return sirayla(async () => {
+            const { rev } = await indeksAl();
+            if (typeof b.taban === "number" && b.taban !== rev) return hata(cevir(dil, "Kayıtlar bu arada değişti; yeniden deneyin."), 409, "cakisma");
+            let x; try { x = indeksDogrula(b.indeks); } catch (e) { return hata(cevir(dil, "Kaydedilemedi: " + e.message), 400); }
+            await tx("kv", "readwrite", s => { s.put(x, "tekneler"); s.put(rev + 1, "tekneler-rev"); });
+            return json({ indeks: x, rev: rev + 1 });
+          });
+        }
+      }
+      if (yol === "api/veri" || yol === "api/ping" || yol === "api/islem") {
+        const tekne = await tekneOf(istek, url);
+        if (!tekne) return hata(cevir(dil, "Tekne bulunamadı"), 404);
+        if (yol === "api/veri" && m === "GET") return await veri(tekne);
+        if (yol === "api/ping") return json({ rev: (await al("kv", anahtar("rev", tekne))) || 0, trev: (await al("kv", "tekneler-rev")) || 0 });
+        if (yol === "api/islem" && m === "POST") return await islem(await istek.text(), dil, tekne);
+      }
       if (yol === "api/kur") {   // TCMB rates: kur.json on the site (refreshed there by a scheduled task); the last one stays for offline use
         try {
           const r = await fetch(new URL("kur.json", g.registration.scope).href, { cache: "no-store" });
@@ -189,7 +267,6 @@
         const eski = await al("kv", "kur");
         return eski ? json(Object.assign({}, eski, { eski: true })) : json({ hata: "Kurlar alınamadı." }, 502);
       }
-      if (yol === "api/islem" && m === "POST") return await islem(await istek.text(), dil);
       if (yol === "api/foto" && m === "POST") { const id = yeniId(); await fotoKoy(id, istek); return json({ id }); }
       if (yol.startsWith("api/foto/")) {
         const id = yol.slice(9); if (!FOTO.test(id)) return hata(cevir(dil, "Fotoğraf kaydedilemedi") + ": invalid id", 400);
@@ -199,7 +276,8 @@
       if (yol === "api/fotolar") return json({ ids: (await anahtarlar("foto")).filter(k => FOTO.test(k)) });
       if (yol === "api/foto-temizle" && m === "POST") {
         const tut = new Set((JSON.parse(await istek.text() || "{}").tut) || []);
-        const { df } = await defterAl(); df.kayitlar.forEach(k => { if (k.photo) tut.add(k.photo); });
+        const dl = {}; for (const t of (await indeksAl()).x.tekneler) dl[t.id] = (await defterAl(t.id)).df;   // every boat's photos stay, archived boats too
+        for (const d of Object.values(dl)) for (const k of [...(d.kayitlar || []), ...Object.values(d.silinenKayitlar || {}).map(x => x && x.kayit || {})]) if (k && k.photo) tut.add(k.photo);   // + deleted-entry archives (T-3)
         let n = 0;
         for (const id of await anahtarlar("foto")) { if (tut.has(id)) continue; const f = await al("foto", id); if (f && Date.now() - (f.zaman || 0) > 3600e3) { await sil("foto", id); n++; } }
         return json({ silinen: n });
@@ -210,7 +288,7 @@
       }
       if (yol === "api/excel" && m === "POST") {
         const x = JSON.parse(await istek.text());
-        return new Response(g.KJ_XLSX.yaz(x.sayfalar, x.dil), { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Cache-Control": "no-store" } });
+        return new Response(g.KJ_XLSX.yaz(x.sayfalar, x.dil, x.para), { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Cache-Control": "no-store" } });
       }
       if (yol === "api/excel-oku" && m === "POST") {
         try { return json(await g.KJ_XLSX.oku(await istek.arrayBuffer())); }

@@ -113,6 +113,28 @@ table.kapak th.n { text-align: right; }
 table.kapak td { padding: 2mm; border-bottom: .5pt solid var(--line); }
 table.kapak tr.toplam td { border-top: 1.2pt solid var(--navy); background: var(--sunk); font-weight: 700; }
 
+/* company name on the cover, consolidated cover, card statements and bank movements */
+.sirket { font-size: 9pt; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--navy2); margin-bottom: .6mm; }
+.uyari { font-size: 7.6pt; color: var(--brass-d); background: var(--brass-soft); border: .6pt solid var(--brass); border-radius: 1.4mm; padding: 2mm 3mm; margin: 6mm 0 0; }
+table.kapak.kons th, table.kapak.kons td { padding: 1.6mm 1.2mm; font-size: 7.4pt; }
+table.kapak.kons th { font-size: 6pt; }
+table.kapak.kons td.n { white-space: nowrap; }
+table.kapak td.y { color: var(--muted); }
+h2.ara { font-size: 7.6pt; letter-spacing: .14em; text-transform: uppercase; color: var(--navy); margin: 6mm 0 2.4mm; }
+.kat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm 6mm; }
+.kat-grid .panel + .panel { margin-top: 0; }
+.kat-grid .panel { break-inside: avoid; }
+.kart-blok { margin-top: 5mm; }
+.kart-blok:first-of-type { margin-top: 6mm; }
+.kart-bas { display: grid; grid-template-columns: 1fr auto; gap: 4mm; align-items: end; margin-bottom: 2mm; break-after: avoid; }
+.kart-bas b { font-size: 10pt; color: var(--navy); }
+.kart-bas .son4 { font-family: "Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace; font-size: 8.4pt; color: var(--brass-d); margin-left: 1.4mm; letter-spacing: .06em; }
+.kart-bas .sahip { font-size: 7.4pt; color: var(--muted); margin-top: .4mm; }
+.kart-bas .kv { margin: 0; }
+.kv.k4 { grid-template-columns: repeat(4, auto); }
+table.ozt.kat { margin: 0 0 2.4mm; }
+table.defter.ekst td { padding: 1.2mm 1.6mm; }
+
 /* photo appendix */
 .ekler h2 { font-size: 12pt; color: var(--navy); margin: 0 0 1mm; }
 .ekler .aciklama { font-size: 7.6pt; color: var(--muted); margin: 0 0 4mm; }
@@ -138,7 +160,13 @@ figure img { display: block; max-width: 100%; max-height: 108mm; margin: 0 auto;
 <div id="r"></div>
 <script>window.__RAPOR = /*VERI*/null;</script>
 <script src="i18n.js"></script>
+<script src="dil/fr.js"></script>
+<script src="dil/it.js"></script>
+<script src="dil/es.js"></script>
+<script src="dil/de.js"></script>
+<script src="dil/el.js"></script>
 <script src="hesap.js"></script>
+<script src="konsolide.js"></script>
 <script src="rapor.js"></script>
 </body>
 </html>

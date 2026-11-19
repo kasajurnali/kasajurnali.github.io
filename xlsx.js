@@ -97,19 +97,29 @@
   }
 
   /* ---------------- writing (same layout and styles as the computer program) ---------------- */
-  const STIL = { "": 0, kalin: 1, para: 2, tarih: 3, basliksatir: 4, parakalin: 5, baslik: 6, etiket: 7, metin: 8, donem: 9, kalinzemin: 10, paragelen: 11, kalan: 12, basliksatirsag: 13 };
+  const STIL = { "": 0, kalin: 1, para: 2, tarih: 3, basliksatir: 4, parakalin: 5, baslik: 6, etiket: 7, metin: 8, donem: 9, kalinzemin: 10, paragelen: 11, kalan: 12, basliksatirsag: 13, sayi: 14, sayikalin: 15 };
   const kac = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
-  function stiller(dil) {
+  // the service worker has no hesap.js: the symbols of PARA_TABLO (hesap.js) here too
+  const SEMBOL = { EUR: { sym: "€", ond: 2 }, USD: { sym: "$", ond: 2 }, GBP: { sym: "£", ond: 2 }, TRY: { sym: "₺", ond: 2 }, CHF: { sym: "CHF", ond: 2 }, AUD: { sym: "A$", ond: 2 }, AED: { sym: "AED", ond: 2 } };
+  // amount format of the book's currency (same as paraBicimi in app/para.go)
+  function paraBicimi(dil, para) {
+    const C = (g.KJ && g.KJ.CUR) || SEMBOL, p = C[para] || C.TRY;
+    const sayi = "#,##0" + (p.ond > 0 ? "." + "0".repeat(p.ond) : ""), q = x => "&quot;" + x + "&quot;";
+    const poz = dil === "en" ? q(p.sym + (/[A-Za-z]$/.test(p.sym) ? " " : "")) + sayi : sayi + q(" " + p.sym);
+    return poz + ";[Red]\\-" + poz + ";" + q("");
+  }
+  function stiller(dil, para) {
+    const LCID = { fr: "40C", it: "410", es: "C0A", de: "407", el: "408" };   // month names of the other languages (as excel.go)
     const f = dil === "en"
-      ? { PARA: '&quot;₺&quot;#,##0.00;[Red]\\-&quot;₺&quot;#,##0.00;&quot;&quot;', TARIH: "dd\\/mm\\/yyyy", AY: "[$-809]mmmm\\ yyyy" }
-      : { PARA: '#,##0.00&quot; ₺&quot;;[Red]\\-#,##0.00&quot; ₺&quot;;&quot;&quot;', TARIH: "dd\\.mm\\.yyyy", AY: "[$-41F]mmmm\\ yyyy" };
+      ? { PARA: paraBicimi(dil, para), TARIH: "dd\\/mm\\/yyyy", AY: "[$-809]mmmm\\ yyyy" }
+      : { PARA: paraBicimi(dil, para), TARIH: LCID[dil] && dil !== "de" ? "dd\\/mm\\/yyyy" : "dd\\.mm\\.yyyy", AY: "[$-" + (LCID[dil] || "41F") + "]mmmm\\ yyyy" };
     return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">\n' +
       '<numFmts count="3"><numFmt numFmtId="164" formatCode="' + f.PARA + '"/><numFmt numFmtId="165" formatCode="' + f.TARIH + '"/><numFmt numFmtId="166" formatCode="' + f.AY + '"/></numFmts>\n' +
       '<fonts count="7">\n<font><sz val="10"/><name val="Calibri"/><family val="2"/></font>\n<font><b/><sz val="10"/><name val="Calibri"/><family val="2"/></font>\n<font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font>\n<font><b/><sz val="16"/><color rgb="FF0E2740"/><name val="Calibri"/><family val="2"/></font>\n<font><sz val="9"/><color rgb="FF5A6B7A"/><name val="Calibri"/><family val="2"/></font>\n<font><sz val="10"/><color rgb="FF1E7349"/><name val="Calibri"/><family val="2"/></font>\n<font><b/><sz val="12"/><color rgb="FF0E2740"/><name val="Calibri"/><family val="2"/></font>\n</fonts>\n' +
       '<fills count="5">\n<fill><patternFill patternType="none"/></fill>\n<fill><patternFill patternType="gray125"/></fill>\n<fill><patternFill patternType="solid"><fgColor rgb="FF0E2740"/><bgColor indexed="64"/></patternFill></fill>\n<fill><patternFill patternType="solid"><fgColor rgb="FFEDF1F4"/><bgColor indexed="64"/></patternFill></fill>\n<fill><patternFill patternType="solid"><fgColor rgb="FFF3E7D1"/><bgColor indexed="64"/></patternFill></fill>\n</fills>\n' +
       '<borders count="3">\n<border><left/><right/><top/><bottom/><diagonal/></border>\n<border><left/><right/><top/><bottom style="thin"><color rgb="FFD3DCE3"/></bottom><diagonal/></border>\n<border><left/><right/><top style="medium"><color rgb="FF0E2740"/></top><bottom style="thin"><color rgb="FFD3DCE3"/></bottom><diagonal/></border>\n</borders>\n' +
-      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>\n<cellXfs count="14">\n' +
-      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>\n<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>\n<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>\n<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left"/></xf>\n<xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>\n<xf numFmtId="164" fontId="1" fillId="3" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>\n<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>\n<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>\n<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>\n<xf numFmtId="166" fontId="6" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1"><alignment horizontal="left"/></xf>\n<xf numFmtId="0" fontId="1" fillId="3" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>\n<xf numFmtId="164" fontId="5" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>\n<xf numFmtId="164" fontId="6" fillId="4" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1"/>\n<xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>\n' +
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>\n<cellXfs count="16">\n' +
+      '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>\n<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>\n<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>\n<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left"/></xf>\n<xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>\n<xf numFmtId="164" fontId="1" fillId="3" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>\n<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>\n<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>\n<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>\n<xf numFmtId="166" fontId="6" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1"><alignment horizontal="left"/></xf>\n<xf numFmtId="0" fontId="1" fillId="3" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>\n<xf numFmtId="164" fontId="5" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>\n<xf numFmtId="164" fontId="6" fillId="4" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1"/>\n<xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>\n<xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>\n<xf numFmtId="4" fontId="1" fillId="3" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>\n' +
       '</cellXfs>\n<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>\n</styleSheet>';
   }
   function konum(ref) {
@@ -124,7 +134,7 @@
     let b = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" showGridLines="0">';
     if (s.dondur > 1) b += '<pane ySplit="' + (s.dondur - 1) + '" topLeftCell="A' + s.dondur + '" activePane="bottomLeft" state="frozen"/>';
     b += '</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>';
-    if ((s.sutunlar || []).length) b += "<cols>" + s.sutunlar.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"/>').join("") + "</cols>";
+    if ((s.sutunlar || []).length) b += "<cols>" + s.sutunlar.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"' + (w > 0 ? "" : ' hidden="1"') + '/>').join("") + "</cols>";
     b += "<sheetData>";
     for (const r of [...satir.keys()].sort((x, y) => x - y)) {
       b += '<row r="' + r + '">';
@@ -146,7 +156,9 @@
     let t = s; for (let i = 2; kullanilan.has(t.toLowerCase()); i++) t = s + " (" + i + ")";
     kullanilan.add(t.toLowerCase()); return t;
   }
-  function yaz(sayfalar, dil) {
+  // the language-independent marker of every export (core property keywords "kj-xlsx=1" + dc:language), read back by oku as Dil
+  const isaretXML = dil => "<cp:keywords>kj-xlsx=1</cp:keywords><dc:language>" + (/^[a-z]{2,3}$/.test(dil || "") ? dil : "tr") + "</dc:language>";
+  function yaz(sayfalar, dil, para) {
     if (!sayfalar || !sayfalar.length) throw new Error("Excel sayfası yok");
     const P = [], kul = new Set();
     let ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>';
@@ -163,9 +175,9 @@
     rels += '<Relationship Id="rId' + (sayfalar.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
     const hepsi = [["[Content_Types].xml", ct], ...P,
       ["_rels/.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>'],
-      ["docProps/core.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Yachting Jurnal</dc:title><dc:creator>Yachting Jurnal</dc:creator></cp:coreProperties>'],
+      ["docProps/core.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Yachting Jurnal</dc:title><dc:creator>Yachting Jurnal</dc:creator>' + isaretXML(dil) + '</cp:coreProperties>'],
       ["docProps/app.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Yachting Jurnal</Application></Properties>'],
-      ["xl/workbook.xml", wb], ["xl/_rels/workbook.xml.rels", rels], ["xl/styles.xml", stiller(dil)]];
+      ["xl/workbook.xml", wb], ["xl/_rels/workbook.xml.rels", rels], ["xl/styles.xml", stiller(dil, para)]];
     return zipYaz(hepsi.map(([a, s]) => [a, utf8(s)]));
   }
 
@@ -209,14 +221,16 @@
     if (!wb) throw new Error("Excel dosyası okunamadı (çalışma kitabı yok).");
     const hedef = {}, rels = await al("xl/_rels/workbook.xml.rels");
     if (rels) rels.replace(/<(?:\w+:)?Relationship\b([^>]*?)\/?>/g, (m, a) => { const id = ozellik(a, "Id"), t = ozellik(a, "Target"); if (id && t) hedef[id] = t.startsWith("/") ? t.slice(1) : "xl/" + t.replace(/^\.\//, ""); return m; });
-    const kitap = { SheetNames: [], Sheets: {} }; let i = 0;
+    const kitap = { SheetNames: [], Sheets: {}, Dil: "", Atlanan: [] }; let i = 0;
+    const core = await al("docProps/core.xml").catch(() => null);
+    if (core && /<(?:\w+:)?keywords>[^<]*kj-xlsx=1[^<]*<\/(?:\w+:)?keywords>/.test(core)) { const lm = /<(?:\w+:)?language>\s*([A-Za-z-]{2,8})\s*<\/(?:\w+:)?language>/.exec(core); kitap.Dil = lm ? lm[1].toLowerCase() : "tr"; }
     const shRe = /<(?:\w+:)?sheet\b([^>]*?)\/?>/g; let sm;
     while ((sm = shRe.exec(wb))) {
       i++;
       const ad = ozellik(sm[1], "name"), rid = ozellik(sm[1], "id");
       if (ad == null) continue;
       const x = await al(hedef[rid] || ("xl/worksheets/sheet" + i + ".xml")).catch(() => null);
-      if (!x) continue;
+      if (!x) { kitap.Atlanan.push(ad); continue; }
       kitap.SheetNames.push(ad); kitap.Sheets[ad] = sayfaOku(x, paylasilan);
     }
     if (!kitap.SheetNames.length) throw new Error("Excel dosyasında okunabilir sayfa bulunamadı.");

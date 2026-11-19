@@ -1,13 +1,13 @@
 {
- "surum": "2.5.0",
- "tarih": "2026-11-10",
+ "surum": "3.0.0",
+ "tarih": "2026-11-19",
  "notlar": {
-  "en": "Our new web address: yachtingjurnal.com. Updates now come from here. “Delete my account” is added to the My Account page. The Privacy Notice is updated (summary of Google data, account deletion); you will be asked to accept it once.",
-  "tr": "Yeni internet adresimiz: yachtingjurnal.com. Güncellemeler artık buradan gelir. Hesabım sayfasına “Hesabımı sil” eklendi. Gizlilik Bildirimi güncellendi (Google verileri özeti, hesap silme); ilk açılışta bir kez onaylamanız istenir."
+  "en": "Yachting Jurnal 3.0: Accounts and cards (cash, bank, card, advance), card statement and bank movement reports, multiple boats with a consolidated company report, 7 currencies with rate source, 7 languages (Turkish, English, French, Italian, Spanish, German, Greek), change history and a deleted-entry archive. Excel import is safer and works in 7 languages. Important security fixes. New plans: Free, Starter, Pro, Advanced.",
+  "tr": "Yachting Jurnal 3.0: Hesaplar ve kartlar (nakit, banka, kart, avans), kart ekstresi ve banka hareketleri raporları, birden çok tekne ve şirket (konsolide) raporu, 7 para birimi ve kur kaynağı, 7 dil (Türkçe, İngilizce, Fransızca, İtalyanca, İspanyolca, Almanca, Yunanca), değişiklik geçmişi ve silinen kayıt arşivi. Excel içe aktarma daha güvenli ve 7 dilde çalışır. Önemli güvenlik düzeltmeleri. Yeni paketler: Free, Starter, Pro, Advanced."
  },
- "dosya": "https://yachtingjurnal.com/guncelleme/KasaJurnali-Kurulum-2.5.0.exe",
- "boyut": 20833280,
- "sha256": "c878548084bb6cd2dc975093e2e4a1bda1bb4dda94968685e3dbc4fdf3352405",
+ "dosya": "https://yachtingjurnal.com/guncelleme/KasaJurnali-Kurulum-3.0.0.exe",
+ "boyut": 21530624,
+ "sha256": "9403fe33d211155b8ab8883227d769f071711db976979f2d5b46ca16c2390a11",
  "adres": "https://yachtingjurnal.com/guncelleme/",
- "imza": "JLTf1Y/0UH5QjTK2/MfWXGOusJs2u/1WMCYUexrjNWdQxwE3MIRrnKXogxRVRq4hnd3jnM8PXZSbolL0K1U/AA=="
+ "imza": "ZwyhmHBMAiMV/03nBhGJR4AI0RxIa1X1iXfM071GnOL3YZVbdi75+AIvYQ/klcvKWHnQMDSNVzZYSctcrDQjBQ=="
 }
