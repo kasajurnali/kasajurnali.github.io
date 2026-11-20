@@ -224,7 +224,7 @@
     const tekne = q.get("tekne") || ANA;
     if (tekne !== ANA && !(await indeksAl()).x.tekneler.some(t => t.id === tekne)) return new Response(cevir(dil, "Tekne bulunamadı"), { status: 404 });
     const { df } = await defterAl(tekne);
-    const veri = JSON.stringify({ defter: df, aylar, fotograflar: q.get("foto") !== "0", yazdir: false, kartEkstresi: q.get("kart") !== "0", dil, olusturma: new Date().toISOString(), token: "", surum: g.KJ_SURUM || "", ortam: "web" }).replace(/<\//g, "<\\/");
+    const veri = JSON.stringify({ defter: df, aylar, fotograflar: q.get("foto") !== "0", yazdir: false, kartEkstresi: q.get("kart") === "1", dil, olusturma: new Date().toISOString(), token: "", surum: g.KJ_SURUM || "", ortam: "web" }).replace(/<\//g, "<\\/");
     const T = dil !== "tr"
       ? { alt: "Prepared with Yachting Jurnal · For information only; not an official accounting record.", sayfa: '"Page " counter(page) " of " counter(pages)', yazdir: "Print / PDF", geri: "‹ Back" }
       : { alt: "Yachting Jurnal ile hazırlanmıştır · Bilgi amaçlıdır; resmî muhasebe kaydı yerine geçmez.", sayfa: '"Sayfa " counter(page) " / " counter(pages)', yazdir: "Yazdır / PDF", geri: "‹ Geri" };

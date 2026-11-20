@@ -17,6 +17,7 @@
   const S = { items: [], set: defaultSet(), setBase: {}, silinenler: {}, silinenKayitlar: {}, senk: null, gbag: null, guncel: null, rev: -1, period: null, q: "", cat: "", tab: "ana", imp: null, mode: "loading", saving: 0, lastSaved: null, saveErr: null, offline: false, klasor: "", dosya: "", ph: null, editing: null, catTouched: false, notice: "", first: false, terms: null };
 
   const kasaFor = p => K.kasaFor(S.items, S.set, p);
+  const eskiMod = () => K.eskiMod(S.set, S.items);   // no accounts/cards defined: every expense leaves the cash box, as in 2.5.0
   const runningMap = () => K.runningMap(S.items, S.set);
   const monthRange = () => K.monthRange(S.items, S.set);
   const isClosed = m => K.isClosed(S.set, m);
@@ -33,6 +34,7 @@
   const hesapListe = () => K.hesaplar(S.set);
   const hesapAdi = h => (VARS_AD[h.id] && h.ad === VARS_AD[h.id] ? t(h.ad) : h.ad) + (h.son4 ? " ··" + h.son4 : "");
   const hesapAd = id => { const h = K.hesapBul(S.set, id); return h ? hesapAdi(h) : id === "kart" ? t("Kredi kartı") : id === "banka" ? t("Banka hesabı") : t("Nakit kasa"); };
+  const kasadaMi = (e, hid) => eskiMod() ? !K.isTr(e) : nakitMi(hid);
   const nakitMi = id => K.hesapTur(S.set, id) === "nakit";
   const ozetFor = p => K.ozetFor(S.items, S.set, p);
   // the accounts offered in a form: active ones, plus the one the entry already uses
@@ -155,9 +157,12 @@
   }
   const persistEntry = k => op({ islem: "kaydet", kayit: k });
   // Only the settings that changed are sent, each with the time it changed (so another device can tell which is newer).
-  async function persistSettings() {
+  // zayifKurali: the automatic "eski" stamp of a book in its 2.5.0 state gets the weakest possible time (1970), so any choice
+  // the user makes on another device always wins when the books are merged (otherwise a later automatic stamp would overwrite it)
+  async function persistSettings(zayifKurali) {
     const f = K.ayarFarki(S.setBase, S.set);
     if (!Object.keys(f.degisen).length) return null;
+    if (zayifKurali && f.zaman.hesapKurali) f.zaman.hesapKurali = "1970-01-01T00:00:00.000Z";
     const r = await op({ islem: "ayar", degisen: f.degisen, damgalar: f.zaman });
     S.set._zaman = Object.assign({}, S.set._zaman, f.zaman); S.setBase = clone(S.set);
     return r;
@@ -202,7 +207,7 @@
     $("#exportBtn").hidden = S.mode !== "live";
   }
   function paySplitLine(p) {
-    const sp = K.paySplit(p === "all" ? S.items : S.items.filter(e => (e.date || "").slice(0, 7) === p), S.set);
+    const sp = K.paySplit(p === "all" ? S.items : S.items.filter(e => (e.date || "").slice(0, 7) === p), S.set, K.kayitIndeksi(S.items));
     if (!sp.kart && !sp.none) return "";
     return '<span class="from">' + esc(t("Nakit") + " " + tl(sp.nakit) + " · " + t("Kart") + " " + tl(sp.kart) + (sp.none ? " · " + t("Banka ve diğer") + " " + tl(sp.none) : "")) + '</span>';
   }
@@ -218,7 +223,7 @@
       '<div class="kc in"><span class="lbl">' + esc(t("Gelen para")) + '</span><span class="v">' + tl(oz.gelir) + '</span></div>' +
       '<div class="kc"><span class="lbl">' + esc(t("Toplam harcama")) + '</span><span class="v">' + tl(oz.gider) + '</span>' + paySplitLine(S.period || curYM()) + '</div>' +
       '<div class="kc end' + (k.kalan < 0 ? " neg" : "") + (low ? " low" : "") + '"><span class="lbl">' + esc(k.kalan < 0 ? t("Kasa açığı") : t("Kalan kasa")) + '</span><span class="v">' + tl(k.kalan) + '</span>' + (k.kalan < 0 ? '<span class="from">' + esc(t("Gelen para önce açığı kapatır")) + '</span>' : low ? '<span class="from">' + esc(t("Uyarı sınırının altında")) + '</span>' : "") + '</div>';
-    $("#formula").textContent = S.set.opening == null && S.mode === "live" && S.items.length ? t("Başlangıç kasası girilmedi; “Ayarlar” bölümünden ekleyin.") : t("Kalan kasa = Devir {devir} + kasaya giren {gir} − kasadan çıkan {cik}. Kart, banka ve avans harcamaları nakit kasayı değiştirmez.", { devir: tl(k.devir), gir: tl(k.in), cik: tl(k.out) });
+    $("#formula").textContent = S.set.opening == null && S.mode === "live" && S.items.length ? t("Başlangıç kasası girilmedi; “Ayarlar” bölümünden ekleyin.") : eskiMod() ? t("Kalan kasa = Devir {devir} + gelen para {gir} − harcama {cik}. Bütün harcamalar (nakit ve kart) kasadan düşer.", { devir: tl(k.devir), gir: tl(k.in), cik: tl(k.out) }) : t("Kalan kasa = Devir {devir} + kasaya giren {gir} − kasadan çıkan {cik}. Kart, banka ve avans harcamaları nakit kasayı değiştirmez.", { devir: tl(k.devir), gir: tl(k.in), cik: tl(k.out) });
   }
   function render() {
     K.setPara(S.set && S.set.para);
@@ -270,7 +275,7 @@
     const giderMi = i => K.isOut(i) || K.isIade(i);
     const flt = i => !S.cat || (S.cat === "__in" ? isIn(i) : S.cat === "__tr" ? K.isTr(i) : S.cat === "__iade" ? K.isIade(i) : S.cat === "__nakit" ? (giderMi(i) && nakitMi(K.hesapOf(i))) : S.cat === "__kart" ? (giderMi(i) && K.hesapTur(S.set, K.hesapOf(i)) === "kart") : S.cat === "__foto" ? !!i.photo : S.cat === "__doviz" ? (i.cur && i.cur !== "TRY") : S.cat.startsWith("__h:") ? (K.hesapOf(i) === S.cat.slice(4) || i.hedef === S.cat.slice(4)) : i.cat === S.cat);
     const its = periodItems().filter(i => flt(i) && (!q || lower([i.desc, i.cat, K.catLabel(i.cat), i.vendor, i.note, i.amount, K.amountNote(i)].join(" ")).includes(q))).sort(K.cmpEntry);
-    const run = runningMap();
+    const run = runningMap(), hIdx = K.kayitIndeksi(S.items);
     let h = '<div class="filters"><input id="q" type="search" placeholder="' + esc(t("Ara: şirket, açıklama, not, tutar…")) + '" value="' + esc(S.q) + '" aria-label="' + esc(t("Fişlerde ara")) + '"><select id="catSel" class="pill" aria-label="' + esc(t("Süzgeç")) + '"><option value="">' + esc(t("Tüm kayıtlar")) + '</option>' +
       [["__in", t("Yalnız gelen para")], ["__nakit", t("Nakit harcamalar")], ["__kart", t("Kartla harcamalar")], ["__tr", t("Transferler")], ["__iade", t("İadeler")], ["__doviz", t("Dövizli kayıtlar")], ["__foto", t("Fotoğraflı fişler")]].map(([v, l]) => '<option value="' + v + '"' + (S.cat === v ? " selected" : "") + '>' + esc(l) + '</option>').join("") +
       '<optgroup label="' + esc(t("Hesap / kart")) + '">' + hesapListe().map(h => '<option value="__h:' + esc(h.id) + '"' + (S.cat === "__h:" + h.id ? " selected" : "") + '>' + esc(hesapAdi(h) + (h.sahip ? " · " + h.sahip : "")) + '</option>').join("") + '</optgroup>' +
@@ -287,7 +292,7 @@
       h += '<section class="month"><div class="mhead"><h2>' + esc(k === "0000-00" ? t("Tarihsiz") : monthLabel(k)) + (isClosed(k) ? '<span class="mtag">' + esc(t("Kapandı")) + '</span>' : "") + '</h2><div class="sub"><span>' + esc(t("Harcama {tutar}", { tutar: tl(s.out) })) + '</span>' + (s.in ? '<span class="g">' + esc(t("Gelen {tutar}", { tutar: tl(s.in) })) + '</span>' : "") + '</div></div><ul class="rows">';
       if (!filtered && k !== "0000-00") { const kk = kasaFor(k); h += '<li><div class="row devir"><span class="d"><b>01</b>' + esc(shortMon(k)) + '</span><span class="t"><span class="ds">' + esc(t("Devir · önceki dönemden kalan kasa")) + '</span></span><span class="amt' + (kk.devir < 0 ? " neg" : "") + '">' + tl(kk.devir) + '</span></div></li>'; }
       g.forEach(i => {
-        const inn = isIn(i), tr = K.isTr(i), iade = K.isIade(i), hid = K.hesapOf(i);
+        const inn = isIn(i), tr = K.isTr(i), iade = K.isIade(i), hid = K.hesapOf(i, hIdx);
         const meta = [
           K.tutarGecerli(i) ? "" : '<span class="chip">' + esc(t("Geçersiz tutar")) + '</span>',
           K.tutarGecerli(i) && !K.hesabaGirer(i, S.set) ? '<span class="chip">' + esc(t("Para birimi uyuşmazlığı")) + '</span>' : "",
@@ -301,7 +306,7 @@
           i.note ? '<span>' + esc(i.note) + '</span>' : ""
         ].filter(Boolean).join("");
         const title = i.vendor ? esc(i.vendor) + (i.desc ? ' <small>· ' + esc(i.desc) + '</small>' : "") : esc(i.desc || "—");
-        h += '<li><button class="row' + (inn || iade ? " in" : "") + '" data-edit="' + esc(i.id) + '"><span class="d"><b>' + ((i.date || "").slice(8, 10) || "–") + '</b>' + (k !== "0000-00" ? esc(shortMon(k)) : "") + '</span><span class="t"><span class="ds">' + title + '</span>' + (meta ? '<span class="mt">' + meta + '</span>' : "") + '</span><span class="amtw"><span class="amt">' + (inn || iade ? "+ " : tr ? "⇄ " : "") + (K.hesabaGirer(i, S.set) || !K.tutarGecerli(i) ? tl(+i.amount || 0) : fx(+i.amount || 0, K.kayitParasi(i))) + '</span><span class="bal' + (run[i.id] < 0 && nakitMi(hid) ? " neg" : "") + '">' + esc(nakitMi(hid) ? t("Kasa") + " " + tl(run[i.id]) : hesapAd(hid)) + '</span></span></button></li>';
+        h += '<li><button class="row' + (inn || iade ? " in" : "") + '" data-edit="' + esc(i.id) + '"><span class="d"><b>' + ((i.date || "").slice(8, 10) || "–") + '</b>' + (k !== "0000-00" ? esc(shortMon(k)) : "") + '</span><span class="t"><span class="ds">' + title + '</span>' + (meta ? '<span class="mt">' + meta + '</span>' : "") + '</span><span class="amtw"><span class="amt">' + (inn || iade ? "+ " : tr ? "⇄ " : "") + (K.hesabaGirer(i, S.set) || !K.tutarGecerli(i) ? tl(+i.amount || 0) : fx(+i.amount || 0, K.kayitParasi(i))) + '</span><span class="bal' + (run[i.id] < 0 && kasadaMi(i, hid) ? " neg" : "") + '">' + esc(kasadaMi(i, hid) ? t("Kasa") + " " + tl(run[i.id]) : hesapAd(hid)) + '</span></span></button></li>';
       });
       h += '</ul>';
       if (!filtered && isClosed(k)) h += stampHTML(k, kasaFor(k).kalan);
@@ -425,7 +430,8 @@
   function viewSum() {
     const pits = periodItems(), outs = pits.filter(e => K.isOut(e) || K.isIade(e));
     const tot = K.sums(pits).out;
-    let h = '';
+    let h = eskiMod() ? '<p class="small eskinot" style="margin:0 0 12px">' + esc(K.eskiDefter(S.set, S.items) ? t("Hesaplar ve kartlar tanımlı değil: bütün giderler kasadan düşer. Kart/banka hesaplarınızı ekleyince kart harcamaları kasayı etkilemez.") : t("Eski kural: bütün harcamalar (nakit ve kart) kasadan düşer")) + '</p>' : '';
+    if (eskiMod()) { const ntr = S.items.filter(e => K.isTr(e)).length; if (ntr) h += '<p class="small eskinot" style="margin:0 0 12px">' + esc(t("Bu defterde {n} transfer kaydı var; eski kuralda nakit kasa toplamına katılmaz.", { n: ntr })) + '</p>'; }
     if (!outs.length) h += '<div class="empty" style="margin-bottom:14px"><h3>' + esc(S.period === "all" ? t("Harcama yok") : t("{ay} için harcama yok", { ay: monthLabel(S.period) })) + '</h3><p>' + esc(t("Yukarıdan başka bir dönem seçin.")) + '</p></div>';
     else {
       const rows = K.catSplit(outs), max = rows[0][1] || 1;
@@ -476,7 +482,8 @@
       '<div class="field"><label for="opDate">' + esc(t("Başlangıç tarihi")) + '</label><input id="opDate" type="date" value="' + esc(st.openingDate || "") + '"></div>' +
       '<div class="field"><label for="opLow">' + esc(K.tp("Kasa uyarı sınırı (₺)")) + '</label>' + numBox("opLow", num(+st.lowLimit || 0), 2) + '><span class="help">' + esc(t("Kasa bunun altına inince uyarır. 0 = kapalı")) + '</span></div>' +
       paraSecHTML("opPara") +
-      '<button class="btn pri" id="saveOp">' + esc(t("Ayarları kaydet")) + '</button></div></div>';
+      '<button class="btn pri" id="saveOp">' + esc(t("Ayarları kaydet")) + '</button></div></div>' +
+      '<div class="panel"><h3>' + esc(t("Kasa kuralı")) + '</h3><p class="lead">' + esc(eskiMod() ? t("Eski kural: bütün harcamalar (nakit ve kart) kasadan düşer") : t("Yeni kural: kart ve banka harcamaları nakit kasayı düşürmez")) + '</p><div class="btns" style="justify-content:flex-start"><button class="btn" id="kuralAc">' + esc(t("Kasa kuralını değiştir")) + '</button></div></div>';
     P.tekne = h;
     h = '<div class="panel" id="importPanel"><h3>' + esc(t("Excel’den içe aktar")) + '</h3>';
     if (!S.imp) h += '<label class="drop" id="drop" for="file" tabindex="0"><strong>' + esc(t("Fiş takip tablonuzu (.xlsx) seçin")) + '</strong><p>' + esc(WEB ? t("Dosyayı Dosyalar uygulamasından seçin. Aylık sayfaların hepsi birden okunur; defterde zaten olan fişler tekrar eklenmez.") : t("Dosyayı buraya sürükleyip bırakın ya da tıklayıp seçin. Aylık sayfaların hepsi birden okunur; defterde zaten olan fişler tekrar eklenmez.")) + '</p><span class="btn pri">' + esc(t("Dosya seç")) + '</span></label><input id="file" type="file" accept=".xlsx,.xlsm" hidden>';
@@ -507,7 +514,58 @@
   }
 
   /* ---------------- Hesaplar ve kartlar ---------------- */
+  // the book has no accounts or cards yet: explain the old cash rule; the account rules start only when the user chooses them (and sees what changes)
+  function viewHesaplarEski() {
+    const et = K.kuralEtkisi(S.items, S.set);
+    return '<div class="panel"><h3>' + esc(t("Hesaplar ve kartlar")) + '</h3><p class="lead">' + esc(t("Henüz hesap ya da kart tanımlamadınız; bütün harcamalar (nakit ve kart) kasadan düşer. Kart, banka ya da avans hesabı eklemek için önce yeni hesap kurallarına geçin: bundan sonra kart ve banka harcamaları nakit kasadan düşmez.")) + '</p>' +
+      '<p class="small">' + esc(t("Kasa şimdi {simdi}; yeni kurallarla {sonra} olur.", { simdi: tl(et.eski), sonra: tl(et.yeni) })) + '</p>' +
+      '<div class="btns" style="justify-content:flex-start;margin-top:10px"><button class="btn pri" id="yeniKuralGec">' + esc(t("Yeni hesap kurallarına geç")) + '</button></div></div>';
+  }
+  /* Kasa kuralı: the cash rule of the book is a setting (hesapKurali "eski" | "yeni"), chosen by the user and shown with its effect.
+     The window opens from Ayarlar, from the Hesaplar page, and once a day for a book touched by 3.0.0 (cards/accounts, no choice yet). */
+  const kuralAd = k => k === "yeni" ? t("Yeni kural") : t("Eski kural");
+  function openKural(ilk) {
+    const et = K.kuralEtkisi(S.items, S.set), simdiki = eskiMod() ? "eski" : "yeni", bu = simdiki === "eski" ? et.eski : et.yeni;
+    const sec = (k, ad, ac) => {
+      const sonra = k === "eski" ? et.eski : et.yeni, ayni = k === simdiki;
+      const kap = !ayni && et.kapali.length ? '<p class="small">' + esc(t("Kapanmış aylar da değişir: {liste}", { liste: et.kapali.map(x => monthLabel(x.ay) + " " + tl(k === "eski" ? x.yeni : x.eski) + " → " + tl(k === "eski" ? x.eski : x.yeni)).join("; ") })) + '</p>' : "";
+      const hs = k === "yeni" && !ayni ? (et.hesaplar.length ? '<p class="small">' + esc(t("Hesap bakiyeleri: {liste}", { liste: et.hesaplar.map(h => h.tur === "kart" && h.kalan < 0 ? t("{ad} {tutar} (borç)", { ad: hesapAd(h.id), tutar: tl(h.kalan) }) : t("{ad} {tutar}", { ad: hesapAd(h.id), tutar: tl(h.kalan) })).join("; ") })) + '</p>' : "") +
+        (et.gelen.n ? '<p class="small" style="color:var(--red);font-weight:600">' + esc(t("{n} gelen para kaydı ({tutar}) hesapsız; yeni kuralda nakit kasaya girmiş sayılır. Havale/EFT ile bankaya girdiyse bu kayıtları düzenleyip banka hesabı seçin.", { n: et.gelen.n, tutar: tl(et.gelen.tutar) })) + '</p>' : "") +
+        '<p class="small">' + esc(t("Eski kurala Ayarlar’dan istediğiniz zaman dönebilirsiniz.")) + '</p>' : "";
+      return '<div class="panel" style="margin:10px 0"><h3 style="margin-top:0">' + esc(ad) + (ayni ? ' <span class="chip">' + esc(t("Şu an kullanılan kural")) + '</span>' : "") + '</h3><p class="small">' + esc(ac) + '</p>' +
+        '<p><b>' + esc(ayni ? t("Kasa {tutar}", { tutar: tl(bu) }) : t("Kasa {simdi} → {sonra} olacak.", { simdi: tl(bu), sonra: tl(sonra) })) + '</b></p>' + hs + kap +
+        '<button type="button" class="btn' + (ayni ? "" : " pri") + '" data-kural="' + k + '">' + esc(ayni ? t("Böyle kalsın") : t("Bu kuralı seç")) + '</button></div>';
+    };
+    $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><div class="sheet" id="kuralForm" role="dialog" aria-modal="true" aria-labelledby="sh"><h3 id="sh">' + esc(t("Kasa kuralını seçin")) + '</h3>' +
+      (ilk ? '<p class="small">' + esc(t("Bu defterde kart ya da hesap kayıtları var. Hangi kuralla hesaplanacağını seçin; seçmezseniz eski kural kullanılır ve bu soru yarın yeniden sorulur.")) + '</p>' : "") +
+      sec("eski", t("Eski kural: bütün harcamalar (nakit ve kart) kasadan düşer"), t("Kalan kasa = açılış + gelen para − bütün harcamalar (nakit ve kart). Kayıtların hesap alanı ve transferler kasa toplamına katılmaz; 2.5.0 ile aynı sonucu verir.")) +
+      sec("yeni", t("Yeni kural: kart ve banka harcamaları nakit kasayı düşürmez"), t("Her kayıt kendi hesabına yazılır; kasa yalnızca nakit hesapları gösterir. Hesapsız eski kayıtlar: kartla ödenen harcamalar kart hesabına, diğerleri ve gelen paralar nakit kasaya yazılır.")) +
+      '<div class="acts"><div class="r"><button type="button" class="btn" id="closeSheet">' + esc(t("Vazgeç")) + '</button></div></div></div></div>';
+  }
+  async function kuralYaz(k) {
+    if (k !== "eski" && k !== "yeni") return;
+    if (k === (eskiMod() ? "eski" : "yeni") && S.set.hesapKurali === k) { closeSheet(); return; }
+    const once = S.set.hesapKurali; S.set.hesapKurali = k;
+    try { await persistSettings(); closeSheet(); render(); toast(t("Kasa kuralı kaydedildi.")); }
+    catch (e) { S.set.hesapKurali = once; if (once === undefined) delete S.set.hesapKurali; toast(e.message); }
+  }
+  // once per loaded book: a book in its 2.5.0 state is stamped "eski"; a book touched by 3.0.0 asks (at most once a day) and meanwhile shows the old rule
+  function kuralDenetle() {
+    if (S.set.hesapKurali === "eski" || S.set.hesapKurali === "yeni" || S.mode !== "live") return;
+    const anahtar = S.tekne || "ana";
+    S._kuralSorulan = S._kuralSorulan || {}; if (S._kuralSorulan[anahtar]) return;
+    if (K.eskiDefter(S.set, S.items)) {
+      S._kuralSorulan[anahtar] = true;
+      S.set.hesapKurali = "eski"; persistSettings(true).catch(() => { delete S.set.hesapKurali; S._kuralSorulan[anahtar] = false; });
+      return;
+    }
+    if (mustAccept() || modalOpen()) return;
+    const bugun = todayISO(), kk = "kj_kural_sor_" + anahtar;
+    try { if (localStorage.getItem(kk) === bugun) { S._kuralSorulan[anahtar] = true; return; } localStorage.setItem(kk, bugun); } catch (e) { }
+    S._kuralSorulan[anahtar] = true; openKural(true);
+  }
   function viewHesaplar() {
+    if (eskiMod()) return viewHesaplarEski();
     const p = S.period || curYM(), tur = TUR_AD();
     const satir = h => {
       const all = K.hesapFor(S.items, S.set, h.id, "all"), kart = h.tur === "kart", harcama = ozetFor(p).hesap[h.id] || 0;
@@ -711,7 +769,8 @@
       else { pay = ""; if (!HAVALE_RE.test(hdrLower(pr))) hesapUyar(acc, pr); }   // a name nobody knows (a bank account, "Garanti Bonus"): said out loud, not guessed
       const rec = { type, date: date || todayISO(), vendor, desc, cat, amount: r2(Math.abs(amount)), note };
       if (pay) rec.pay = pay;
-      if (pay === "kart" && type !== "in") rec.hesap = hesap || kartHesapId();   // an expense AND a refund on a card belong to the card account, not the cash box
+      if (eskiMod()) { /* old cash rule: the book has no accounts; the entry keeps its way of paying (pay) and no `hesap` */ }
+      else if (pay === "kart" && type !== "in") rec.hesap = hesap || kartHesapId();   // an expense AND a refund on a card belong to the card account, not the cash box
       else if (hesap) rec.hesap = hesap;
       if (cat === "Yakıt") { const lt = K.parseLt(desc + " " + note); if (lt > 0) rec.lt = lt; }
       acc.rows.push(rec);
@@ -813,8 +872,21 @@
   // How the money moved: a receipt is paid in cash or by card; money coming in arrives by bank transfer, EFT or cash.
   const PAYS = type => type === "in" ? [["havale", t("Havale")], ["eft", t("EFT")], ["nakit", t("Nakit")]] : [["nakit", t("Nakit")], ["kart", t("Kart")]];
   // where the money came from / went to: the account (cash box, a card, the bank…); money coming in also says how it arrived
+  // eski mod (no accounts or cards defined): as in 2.5.0 — how it was paid / how it arrived, never an account; an entry carries no `hesap`
+  function payHTMLEski(type, payV, v) {
+    const ops = PAYS(type === "in" ? "in" : "out"), sec = x => (ops.some(o => o[0] === x) ? x : "");
+    const seg = (lbl, sel) => '<p class="seglbl" style="margin-bottom:4px">' + esc(lbl) + '</p><div class="seg" role="radiogroup" aria-label="' + esc(lbl) + '">' + ops.map(([x, l]) => '<label><input type="radio" name="pay" value="' + x + '"' + (sel === x ? " checked" : "") + '><span>' + esc(l) + '</span></label>').join("") + '</div>';
+    if (type === "in") return seg(t("Nasıl geldi?"), sec(payV) || lastPay("in"));
+    if (type === "iade") return payHTMLIade(v);
+    return seg(t("Nasıl ödendi?"), sec(payV) || sec(v.pay) || "nakit");
+  }
+  function payHTMLIade(v) {
+    const son = S.items.filter(e => K.isOut(e) && (e.date || "") >= addMonth(curYM(), -6) + "-01").sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 80);
+    return '<div class="field full"><label for="f_iadeOf">' + esc(t("Hangi harcamanın iadesi? (isteğe bağlı)")) + '</label><select id="f_iadeOf"><option value="">—</option>' + son.map(e => '<option value="' + esc(e.id) + '"' + (e.id === v.iadeOf ? " selected" : "") + '>' + esc(dmy(e.date) + " · " + (e.vendor || e.desc || "") + " · " + tl(e.amount)) + '</option>').join("") + '</select></div>';
+  }
   function payHTML(type, payV, v) {
     v = v || {};
+    if (eskiMod() && type !== "tr") return payHTMLEski(type, payV, v);
     const hs = v.hesap || (v.id ? K.hesapOf(v) : sonHesap(type));
     const sec = (id, lbl, val, haric) => '<div class="field full"><label for="' + id + '">' + esc(lbl) + '</label><select id="' + id + '">' + hesapSecenek(val, haric) + '</select></div>';
     if (type === "tr") {
@@ -862,7 +934,7 @@
     $("#sheetHost").innerHTML = '<div class="scrim" id="scrim"><form class="sheet" id="form" role="dialog" aria-modal="true" aria-labelledby="sh" novalidate>' +
       '<h3 id="sh">' + esc(sheetTitle(!!it, v.type === "in", !!copyFrom, ty)) + '</h3>' +
       '<div id="quickBox">' + (it ? "" : quickHTML(v.type || "out")) + '</div>' +
-      '<div class="seg turseg" role="radiogroup" aria-label="' + esc(t("Kayıt türü")) + '" style="margin-bottom:14px">' + TURLER().map(([x, l]) => '<label><input type="radio" name="ty" value="' + x + '"' + (ty === x ? " checked" : "") + '><span>' + esc(l) + '</span></label>').join("") + '</div>' +
+      '<div class="seg turseg" role="radiogroup" aria-label="' + esc(t("Kayıt türü")) + '" style="margin-bottom:14px">' + TURLER().filter(x => !eskiMod() || x[0] !== "tr" || ty === "tr").map(([x, l]) => '<label><input type="radio" name="ty" value="' + x + '"' + (ty === x ? " checked" : "") + '><span>' + esc(l) + '</span></label>').join("") + '</div>' +
       '<div class="grid2">' +
       '<div class="field"><label for="f_amount" id="amtLbl">' + esc(t("Tutar")) + '</label><div class="amtline">' + numBox("f_amount", amountShown, 2) + ' placeholder="' + esc(num(0)) + '"><select id="f_cur" class="cursel" aria-label="' + esc(t("Para birimi")) + '">' + K.PARALAR.map(c => '<option value="' + c + '"' + (c === cur ? " selected" : "") + '>' + esc(K.CUR[c].sym === c ? c : K.CUR[c].sym + ' ' + c) + '</option>').join("") + '</select></div></div>' +
       '<div class="field"><label for="f_date">' + esc(t("Tarih")) + '</label><input id="f_date" type="date" value="' + esc(v.date) + '"></div>' +
@@ -937,6 +1009,7 @@
     if (isNaN(typed) || typed <= 0) { err.textContent = t("Tutarı rakamla yazın, ör. {ornek}", { ornek: boxText(1250.5, 2) }); g("f_amount").focus(); return; }
     if (cur !== PB && !K.kurGecerli(rate)) { err.textContent = t("Kuru yazın, ör. {ornek}", { ornek: K.dec(37.85) }); g("f_rate").focus(); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { err.textContent = t("Tarih seçin."); g("f_date").focus(); return; }
+    const eski = eskiMod();
     const hesap = g("f_hesap") ? g("f_hesap").value : "nakit", hedef = g("f_hedef") ? g("f_hedef").value : "";
     if (type === "tr" && (!hedef || hedef === hesap)) { err.textContent = t("Transfer için iki farklı hesap seçin."); (g("f_hedef") || g("f_hesap")).focus(); return; }
     if (!vendor && !desc && type !== "tr") { err.textContent = t("Şirket ya da açıklama yazın."); g("f_vendor").focus(); return; }
@@ -948,7 +1021,8 @@
     const fk = S.fxKaynak || {};
     Object.assign(body, K.dovizAlanlari(typed, cur, rate, fk.kaynak || "elle", fk.tarih != null ? fk.tarih : date));
     if (type === "in") { const p = document.querySelector('input[name="pay"]:checked'); if (p) body.pay = p.value; }
-    if (type === "out") body.pay = K.hesapTur(S.set, hesap) === "kart" ? "kart" : "nakit";   // older versions read the payment method
+    if (type === "out") { const pr = eski && document.querySelector('input[name="pay"]:checked'); body.pay = eski ? (pr && pr.value === "kart" ? "kart" : "nakit") : K.hesapTur(S.set, hesap) === "kart" ? "kart" : "nakit"; }   // older versions read the payment method
+    if (eski) delete body.hesap;   // no accounts: an entry carries no account, so the book stays on the old cash rule
     if (type === "tr") { body.hedef = hedef; if (!desc) body.desc = t("Transfer"); }
     if (type === "iade") { const io = g("f_iadeOf") && g("f_iadeOf").value; if (io) { body.iadeOf = io; const o = S.items.find(x => x.id === io); if (o && !body.cat) body.cat = o.cat || ""; } }
     if (type === "out") { const lt = toNum(g("f_lt").value); if (lt > 0 && !g("ltWrap").hidden) body.lt = lt; }
@@ -1169,7 +1243,7 @@
       '<label class="opt"><input type="radio" name="fmt" value="pdf" checked><span class="oi">PDF</span><span class="ot"><b>' + esc(t("PDF rapor")) + '</b><span>' + esc(WEB ? t("Kasa raporu açılır; “Yazdır / PDF” ile yazdırabilir ya da PDF olarak paylaşabilirsiniz") : t("Yazdırmaya, e-postayla göndermeye hazır kasa raporu: özet, fiş listesi, anlık kasa, kategori, yakıt ve imza alanları")) + '</span></span></label>' +
       '<label class="opt"><input type="radio" name="fmt" value="xlsx"><span class="oi x">XLS</span><span class="ot"><b>' + esc(t("Excel tablosu")) + '</b><span>' + esc(t("Aylık fiş takip tablosu düzeninde; toplamlar formüllü")) + '</span></span></label></div>' +
       '<p class="seglbl" style="margin:14px 0 4px">' + esc(t("Hangi dönem?")) + '</p><div class="seg" role="radiogroup" aria-label="' + esc(t("Kapsam")) + '">' + (one ? '<label><input type="radio" name="scope" value="period" checked><span>' + esc(monthLabel(S.period)) + '</span></label>' : "") + '<label><input type="radio" name="scope" value="all"' + (one ? "" : " checked") + '><span>' + esc(t("Tüm aylar")) + '</span></label></div>' +
-      (kartVar() ? '<label class="check" style="margin-top:12px" id="kartOpt"><input type="checkbox" id="withKart" checked> <span>' + esc(t("Kart ekstresi ve banka hareketleri")) + '</span></label>' : "") +
+      (kartVar() ? '<label class="check" style="margin-top:12px" id="kartOpt"><input type="checkbox" id="withKart"> <span>' + esc(t("Kart ekstresi ve banka hareketleri")) + '</span></label>' : "") +
       '<label class="check" style="margin-top:12px" id="konsOpt" hidden><input type="checkbox" id="withKons"> <span>' + esc(t("Tüm tekneler (konsolide)")) + '</span></label>' +
       (anyPhoto ? '<label class="check" style="margin-top:12px" id="photoOpt"><input type="checkbox" id="withPhotos" checked> <span>' + esc(t("Fiş fotoğraflarını rapora ek olarak koy")) + '</span></label>' : "") +
       '<p class="small" style="margin:12px 0 0">' + esc(t("Rapor ve tablo Türkçe hazırlanır. Dili Ayarlar’dan değiştirebilirsiniz.")) + '</p>' +
@@ -1179,7 +1253,7 @@
   }
   // reports (konsolide.js): card statements when the book has card/bank movements; several boats when the
   // multi-boat part provides window.KJ_TEKNELER() (a list, or { sirket, tekneler }); hidden without it
-  const kartVar = () => S.items.some(e => K.isTr(e) || K.hesapTur(S.set, K.hesapOf(e)) !== "nakit");
+  const kartVar = () => !eskiMod() && S.items.some(e => K.isTr(e) || K.hesapTur(S.set, K.hesapOf(e)) !== "nakit");
   async function tekneVerisi() {
     try {
       const f = window.KJ_TEKNELER, x = typeof f === "function" ? await f() : null;
@@ -1192,7 +1266,7 @@
     const fmt = document.querySelector('input[name="fmt"]:checked').value, scope = document.querySelector('input[name="scope"]:checked').value;
     if (!K.ozellikIste(fmt === "pdf" ? "pdf_rapor" : "excel", fmt === "pdf" ? t("PDF rapor") : t("Excel tablosu"))) return;   // paket.js
     let months = exportMonths(scope);
-    const wk = $("#withKart"), kart = !wk || wk.checked, wkn = $("#withKons"), tv = await tekneVerisi();
+    const wk = $("#withKart"), kart = !!(wk && wk.checked), wkn = $("#withKons"), tv = await tekneVerisi();
     let kons = null;
     if (wkn && wkn.checked && tv.tekneler.length > 1) {
       if (K.ozellikIste && !K.ozellikIste("konsolide_rapor", t("Konsolide rapor"))) return;   // paket.js (Fleet)
@@ -1207,7 +1281,7 @@
     btn.disabled = true; btn.textContent = fmt === "pdf" ? t("PDF hazırlanıyor…") : t("Excel hazırlanıyor…");
     if (WEB) {
       try {
-        if (fmt === "pdf") { const wp = $("#withPhotos"); let x = ""; try { if (kons || ek.sirket) { sessionStorage.setItem("kj_rapor_ek", JSON.stringify({ konsolide: kons, sirket: ek.sirket })); x = "&ek=1"; } } catch (e) { } location.href = "rapor?ay=" + encodeURIComponent(months.join(",")) + "&foto=" + (wp && wp.checked ? "1" : "0") + (kart ? "" : "&kart=0") + x + "&dil=" + K.lang + "&tekne=" + encodeURIComponent(S.tekne || "ana"); return; }
+        if (fmt === "pdf") { const wp = $("#withPhotos"); let x = ""; try { if (kons || ek.sirket) { sessionStorage.setItem("kj_rapor_ek", JSON.stringify({ konsolide: kons, sirket: ek.sirket })); x = "&ek=1"; } } catch (e) { } location.href = "rapor?ay=" + encodeURIComponent(months.join(",")) + "&foto=" + (wp && wp.checked ? "1" : "0") + (kart ? "&kart=1" : "") + x + "&dil=" + K.lang + "&tekne=" + encodeURIComponent(S.tekne || "ana"); return; }
         const ad = (base + "Yachting Jurnal - " + label).replace(/[\/:*?"<>|]/g, "-") + ".xlsx";
         const r = await api("api/excel", { method: "POST", raw: true, json: { dosya: ad, dil: K.lang, para: K.paraKodu(), sayfalar: sayfalar() } });
         dosyaHazir(t("Excel dosyası hazır"), ad, await r.blob(), "XLS");
@@ -1232,26 +1306,29 @@
   function serial(iso) { const [y, m, d] = iso.split("-").map(Number); return (Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 864e5; }
   function sheetSpec(ym) {
     const k = kasaFor(ym), oz = ozetFor(ym);
+    const hIdx2 = K.kayitIndeksi(S.items);
     const its = S.items.filter(e => (e.date || "").slice(0, 7) === ym && K.tutarGecerli(e)).sort(K.cmpEntry);
     const H = []; const put = (r, v, st, f) => H.push({ r, v: v === undefined ? null : v, st: st || "", f: f || "" });
     const up = s => s.toLocaleUpperCase(K.loc);
-    const kasaIds = hesapListe().filter(h => h.tur === "nakit").map(h => h.id);
-    const kasaEtki = e => r2(kasaIds.reduce((a, id) => a + K.etki(e, id), 0) / 100);
+    const eski = K.eskiMod(S.set), kasaEtki = e => r2(K.kasaEtki(e, S.set, eski, hIdx2) / 100);
     put("A1", S.set.name || "Yachting Jurnal", "baslik"); put("E1", up(t("Dönem")), "etiket"); put("E2", serial(ym + "-01"), "donem");
     put("A2", t("Günlük harcama fiş takip tablosu"), "etiket");
     const pu = K.paraUyumsuz(its, S.set); if (pu.length) put("A3", t("{n} kayıt başka bir para biriminde girilmiş (defter {para}); bu kayıtlar toplamlara katılmadı:", { n: pu.length, para: K.paraKodu() }) + " " + pu.map(e => K.dmy(e.date) + " " + K.fx(e.amount, K.kayitParasi(e))).join(", "), "etiket");
     // row 4–5: the cash box equation (Devir + Kasaya giren − Kasadan çıkan = Kalan kasa); income and expenses of every account on their own, labelled
-    put("A4", up(t("Devir kasa")), "etiket"); put("C4", up(t("Kasaya giren")), "etiket"); put("D4", up(t("Kasadan çıkan")), "etiket"); put("E4", up(t("Kalan kasa")), "etiket");
-    put("G4", up(t("Gelen para (tüm hesaplar)")), "etiket"); put("H4", up(t("Toplam harcama (tüm hesaplar)")), "etiket");
+    put("A4", up(t("Devir kasa")), "etiket"); put("C4", up(t(K.eskiMod(S.set) ? "Gelen para" : "Kasaya giren")), "etiket"); put("D4", up(t(K.eskiMod(S.set) ? "Toplam harcama" : "Kasadan çıkan")), "etiket"); put("E4", up(t("Kalan kasa")), "etiket");
+    const sp = K.paySplit(its, S.set, hIdx2);
+    // old rule: ONE summary (Devir, Gelen para, Toplam harcama, Kalan kasa) and how the spending was paid; account rule: the cash box and, beside it, all accounts
+    if (eski) { put("G4", up(t("Nakit")), "etiket"); put("H4", up(t("Kart")), "etiket"); if (sp.none) put("I4", up(t("Banka ve diğer")), "etiket"); }
+    else { put("G4", up(t("Gelen para (tüm hesaplar)")), "etiket"); put("H4", up(t("Toplam harcama (tüm hesaplar)")), "etiket"); }
     const onceki = K.oncekiIadeler ? K.oncekiIadeler(S.items) : new Set();
-    [t("Tarih"), t("Şirket"), t("Açıklama"), t("Harcama") + " (" + K.paraSym() + ")", t("Gelen para") + " (" + K.paraSym() + ")", t("Hesap / kart"), t("Kategori"), t("Kasa etkisi") + " (" + K.paraSym() + ")", t("Not")].map(up).forEach((x, i) => put("ABCDEFGHI"[i] + "7", x, i === 3 || i === 4 || i === 7 ? "basliksatirsag" : "basliksatir"));
+    [t("Tarih"), t("Şirket"), t("Açıklama"), t("Harcama") + " (" + K.paraSym() + ")", t("Gelen para") + " (" + K.paraSym() + ")", (eski ? t("Ödeme") : t("Hesap / kart")), t("Kategori"), t("Kasa etkisi") + " (" + K.paraSym() + ")", t("Not")].map(up).forEach((x, i) => put("ABCDEFGHI"[i] + "7", x, i === 3 || i === 4 || i === 7 ? "basliksatirsag" : "basliksatir"));
     put("A8", up(t("Devir")) + " · " + t("önceki dönemden kalan kasa"), "metin"); ["B8", "C8", "D8", "F8", "G8", "I8"].forEach(c => put(c, null, "metin")); put("E8", k.devir, "para"); put("H8", k.devir, "para");
     its.forEach((e, ix) => {
-      const r = 9 + ix, inn = isIn(e), tr = K.isTr(e), iade = K.isIade(e), hid = K.hesapOf(e);
+      const r = 9 + ix, inn = isIn(e), tr = K.isTr(e), iade = K.isIade(e), hid = K.hesapOf(e, hIdx2);
       put("A" + r, serial(e.date), "tarih"); put("B" + r, e.vendor || "", "metin"); put("C" + r, e.desc || "", "metin");
       const gir = K.hesabaGirer(e, S.set);   // R7: an entry in another book currency stays out of every column that is added up
       put("D" + r, inn || tr || !gir ? null : (iade ? -1 : 1) * (+e.amount || 0), "para"); put("E" + r, inn && gir ? +e.amount || 0 : null, "paragelen");
-      put("F" + r, tr ? hesapAd(hid) + " → " + hesapAd(e.hedef) : hesapAd(hid) + (inn && e.pay ? " · " + K.payName(e.pay) : ""), "metin");
+      put("F" + r, tr ? hesapAd(hid) + " → " + hesapAd(e.hedef) : eski ? (inn ? K.payName(e.pay) : e.pay === "kart" ? t("Kart") : t("Nakit")) : hesapAd(hid) + (inn && e.pay ? " · " + K.payName(e.pay) : ""), "metin");
       put("G" + r, inn ? t("Gelen para") : tr ? t("Transfer") : (iade ? (onceki.has(e.id) ? t("Önceki dönem iadesi") : t("İade")) + " · " : "") + K.catLabel(e.cat), "metin");
       const ke = gir ? kasaEtki(e) : 0; put("H" + r, ke || null, "para");
       put("I" + r, [gir ? "" : t("UYUMSUZ PARA BİRİMİ: {tutar}, toplama katılmadı", { tutar: K.fx(e.amount, K.kayitParasi(e)) }), K.amountNote(e), e.note, e.photo ? t("Fiş fotoğrafı var") : ""].filter(Boolean).join(" · "), "metin");
@@ -1260,11 +1337,15 @@
     put("A" + tot, up(t("Toplam")), "kalinzemin"); ["B", "C", "F", "G", "I"].forEach(c => put(c + tot, null, "kalinzemin"));
     put("D" + tot, oz.gider, "parakalin", "SUM(D" + first + ":D" + last + ")"); put("E" + tot, oz.gelir, "parakalin", "SUM(E" + first + ":E" + last + ")");
     put("H" + tot, k.kalan, "parakalin", "SUM(H8:H" + last + ")");
-    put("A" + kal, up(t("Kalan kasa")) + "  (" + t("Devir + kasa etkisi; kart ve banka harcamaları nakit kasayı değiştirmez") + ")", "kalin"); put("H" + kal, k.kalan, "kalan", "H" + tot);
+    put("A" + kal, up(t("Kalan kasa")) + "  (" + (eski ? t("Devir + kasa etkisi; bütün harcamalar kasadan düşer") : t("Devir + kasa etkisi; kart ve banka harcamaları nakit kasayı değiştirmez")) + ")", "kalin"); put("H" + kal, k.kalan, "kalan", "H" + tot);
     if (isClosed(ym)) put("A" + (kal + 1), up(t("Dönem kapandı")) + " · " + t("kalan kasa {ay} devrine aktarıldı", { ay: monthLabel(addMonth(ym, 1)) }), "etiket");
     const kek = its.map(e => K.hesabaGirer(e, S.set) ? Math.round(kasaEtki(e) * 100) : 0), gir = r2(kek.reduce((a, x) => a + (x > 0 ? x : 0), 0) / 100), cik = r2(kek.reduce((a, x) => a - (x < 0 ? x : 0), 0) / 100);
-    put("A5", k.devir, "para", "H8"); put("C5", gir, "paragelen", 'SUMIF(H' + first + ':H' + last + ',">0")'); put("D5", cik, "para", '-SUMIF(H' + first + ':H' + last + ',"<0")'); put("E5", k.kalan, "kalan", "H" + kal);
-    put("G5", oz.gelir, "paragelen", "E" + tot); put("H5", oz.gider, "para", "D" + tot);
+    put("A5", k.devir, "para", "H8");
+    // one definition for Excel, PDF and the screen (kasaFor): old rule → money in / net spending (a refund lowers it); account rule → what moved in and out of the cash accounts
+    if (eski) { put("C5", k.in, "paragelen", "E" + tot); put("D5", k.out, "para", "D" + tot); }
+    else { put("C5", gir, "paragelen", 'SUMIF(H' + first + ':H' + last + ',">0")'); put("D5", cik, "para", '-SUMIF(H' + first + ':H' + last + ',"<0")'); } put("E5", k.kalan, "kalan", "H" + kal);
+    if (eski) { put("G5", sp.nakit, "para"); put("H5", sp.kart, "para"); if (sp.none) put("I5", sp.none, "para"); }
+    else { put("G5", oz.gelir, "paragelen", "E" + tot); put("H5", oz.gider, "para", "D" + tot); }
     return { ad: K.monthName(+ym.slice(5, 7)) + "_" + ym.slice(0, 4), sutunlar: [12, 24, 30, 15, 15, 22, 20, 15, 34], dondur: 8,
       birlesik: ["A1:C1", "A2:C2", "E1:F1", "E2:F2", "A4:B4", "A5:B5", "A8:G8", "A" + tot + ":C" + tot, "A" + kal + ":G" + kal], hucreler: H };
   }
@@ -1821,6 +1902,7 @@
     if (bozuk.length) { const m = t("{n} kaydın tutarı eksi ya da geçersiz; bu kayıtlar hesaplara katılmadı. Listede “Geçersiz tutar” ile işaretli kayıtları açıp tutarı düzeltin ya da silin.", { n: bozuk.length }); if (!String(S.notice || "").includes(m)) S.notice = [S.notice, m].filter(Boolean).join(" "); }
     if (!S.period) S.period = curYM();
     applyLang();
+    setTimeout(kuralDenetle, 400);
   }
   async function reload() { if (window.KJ_FILO) { await KJ_FILO.listeAl(); KJ_FILO.yenile(); } const d = await api("api/veri"); applyData(d); render(); if (S.terms) renderTerms(); }
   async function ping() {
@@ -1862,6 +1944,8 @@
     if (t0.closest("#senkNow")) { KJSenk.esitle(); return; }
     if (t0.closest("#senkOff")) { openSenkOff(); return; }
     if (t0.closest("#hesapEkle")) { if (hesapListe().filter(h => h.id !== "nakit" && h.durum !== "arsiv").length >= 2 && !K.ozellikIste("coklu_hesap", t("Birden çok kart ve hesap"))) return; openHesap(null); return; }   // Basic: nakit kasa + 2 hesap/kart (paket.js)
+    if (t0.closest("#yeniKuralGec") || t0.closest("#kuralAc")) { openKural(false); return; }
+    { const kb = t0.closest("[data-kural]"); if (kb) { kuralYaz(kb.dataset.kural); return; } }
     if (t0.closest("#trEkle")) { openSheet(null, "tr"); return; }
     if (t0.closest("#hesapSilBtn")) { hesapSilIslem(t0.closest("#hesapSilBtn").dataset.id); return; }
     { const hb = t0.closest("[data-hesap]"); if (hb) { openHesap(hb.dataset.hesap); return; } }

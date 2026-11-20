@@ -55,13 +55,13 @@
       aylar.forEach(a => tumAylar.add(a));
       const icinde = aylarOf(items, donem) ? new Set(aylar) : null;
       const its = icinde ? items.filter(e => icinde.has(ayOf(e))) : items;
-      const oz = K.ozetFor(its, set, "all"), sp = K.paySplit(its, set);
+      const ix = K.kayitIndeksi(items), oz = K.ozetFor(its, set, "all", ix), sp = K.paySplit(its, set, ix);
       const bc = {};
       its.forEach(e => { if (!K.isOut(e) && !K.isIade(e)) return; const c = e.cat || "Kategorisiz"; bc[c] = (bc[c] || 0) + kr(e.amount) * (K.isIade(e) ? -1 : 1); });
       return {
         id: tk0.id != null ? String(tk0.id) : String(i + 1), ad: tk0.ad || set.name || "", para,
         devir, gelen: oz.gelir, harcama: oz.gider, iade: oz.iade, kalan,
-        nakit: sp.nakit, kart: sp.kart, diger: sp.none, islem: its.filter(e => !K.isTr(e)).length,
+        nakit: sp.nakit, kart: sp.kart, diger: sp.none, eski: K.eskiMod(set), islem: its.filter(e => !K.isTr(e)).length,
         kategoriler: enBuyuk(bc, nKat), _bc: bc
       };
     });
@@ -83,7 +83,8 @@
     const secilen = Array.isArray(donem) ? new Set(donem) : null, aylar = aylarOf([], donem) || [...tumAylar].sort();
     // months that were not asked for but lie between the chosen ones (added so the period is consecutive)
     const eklenenAylar = secilen ? aylar.filter(a => !secilen.has(a)) : [];
-    return { aylar, eklenenAylar, tekneler: satirlar, paralar, toplamlar, karisik, toplam: !karisik && paralar.length ? toplamlar[paralar[0]] : null };
+    const eski = satirlar.some(s => s.eski);   // some boat has no accounts: its cash box is the 2.5.0 one (every expense leaves it)
+    return { aylar, eklenenAylar, tekneler: satirlar, paralar, toplamlar, karisik, eski, toplam: !karisik && paralar.length ? toplamlar[paralar[0]] : null };
   }
 
   // warning for a consolidated period whose chosen months had gaps (the months in between were added)
@@ -101,9 +102,10 @@
   /* kartEkstresi(items, set, ay): one statement per card (and per advance / other account) used in the month.
      → [{ id, ad, sahip, son4, tur, islem, harcama (gross), iade, net, odeme (payments/transfers into it), kategoriler, liste }] */
   function kartEkstresi(items, set, ay) {
+    const ix = K.kayitIndeksi(items);
     const its = (items || []).filter(e => ayOf(e) === ay && (K.hesabaGirer ? K.hesabaGirer(e, set) : true)).sort(K.cmpEntry);
     return K.hesaplar(set).filter(h => h.tur !== "nakit" && h.tur !== "banka").map(h => {
-      const liste = its.filter(e => K.etki(e, h.id) !== 0 || (!K.isTr(e) && K.hesapOf(e) === h.id && K.tutarGecerli(e) && +e.amount === 0));
+      const liste = its.filter(e => K.etki(e, h.id, ix) !== 0 || (!K.isTr(e) && K.hesapOf(e, ix) === h.id && K.tutarGecerli(e) && +e.amount === 0));
       if (!liste.length) return null;
       let harcama = 0, iade = 0, odeme = 0; const bc = {};
       liste.forEach(e => {
@@ -122,13 +124,14 @@
   /* bankaHareketleri(items, set, ay): the movements of every bank account in the month, with a running balance.
      → [{ id, ad, son4, devir, giris, cikis, kalan, satirlar: [{ e, giris, cikis, bakiye }] }] */
   function bankaHareketleri(items, set, ay) {
+    const ix = K.kayitIndeksi(items);
     const its = (items || []).filter(e => ayOf(e) === ay && (K.hesabaGirer ? K.hesabaGirer(e, set) : true)).sort(K.cmpEntry);
     return K.hesaplar(set).filter(h => h.tur === "banka").map(h => {
-      const ilgili = its.filter(e => K.etki(e, h.id) !== 0);
+      const ilgili = its.filter(e => K.etki(e, h.id, ix) !== 0);
       if (!ilgili.length) return null;
       const k = K.hesapFor(items, set, h.id, ay);
       let b = kr(k.devir);
-      const satirlar = ilgili.map(e => { const x = K.etki(e, h.id); b += x; return { e, giris: x > 0 ? tk(x) : 0, cikis: x < 0 ? tk(-x) : 0, bakiye: tk(b) }; });
+      const satirlar = ilgili.map(e => { const x = K.etki(e, h.id, ix); b += x; return { e, giris: x > 0 ? tk(x) : 0, cikis: x < 0 ? tk(-x) : 0, bakiye: tk(b) }; });
       return { id: h.id, ad: h.ad || "", son4: h.son4 || "", sahip: h.sahip || "", devir: k.devir, giris: k.giren, cikis: k.cikan, kalan: k.kalan, satirlar };
     }).filter(Boolean);
   }
@@ -205,7 +208,7 @@
       put("J" + r, T.kategoriler.slice(0, 3).map(([c, v]) => K.catLabel(c) + " " + K.num(v)).join(" · "), "kalinzemin");
       r += 2;
     });
-    put("A" + r, kons.karisik ? t("Tekneler farklı para birimleriyle tutuluyor. Tutarlar kur çevrimi yapılmadan, para birimine göre ayrı toplanmıştır.") : t("Kalan kasa yalnızca nakit kasadır; kart, banka ve diğer hesaplardan yapılan harcamalar nakit kasayı azaltmaz."), "etiket");
+    put("A" + r, kons.karisik ? t("Tekneler farklı para birimleriyle tutuluyor. Tutarlar kur çevrimi yapılmadan, para birimine göre ayrı toplanmıştır.") : kons.eski ? t("Hesap tanımlamamış teknelerde bütün harcamalar kasadan düşer; hesap kuralına geçmiş teknelerde kart, banka ve diğer hesaplardan yapılan harcamalar nakit kasayı azaltmaz.") : t("Kalan kasa yalnızca nakit kasadır; kart, banka ve diğer hesaplardan yapılan harcamalar nakit kasayı azaltmaz."), "etiket");
     if (kons.eklenenAylar && kons.eklenenAylar.length) put("A" + (r + 1), aradaAylarUyari(kons.eklenenAylar), "etiket");
     return { ad: t("Konsolide"), sutunlar: [24, 8, 15, 15, 15, 15, 15, 15, 15, 44], dondur: 5, birlesik: ["A1:E1", "A2:E2"], hucreler: H };
   }

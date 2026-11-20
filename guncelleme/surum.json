@@ -1,13 +1,13 @@
 {
- "surum": "3.0.0",
- "tarih": "2026-11-19",
+ "surum": "3.0.1",
+ "tarih": "2026-11-20",
  "notlar": {
-  "en": "Yachting Jurnal 3.0: Accounts and cards (cash, bank, card, advance), card statement and bank movement reports, multiple boats with a consolidated company report, 7 currencies with rate source, 7 languages (Turkish, English, French, Italian, Spanish, German, Greek), change history and a deleted-entry archive. Excel import is safer and works in 7 languages. Important security fixes. New plans: Free, Starter, Pro, Advanced.",
-  "tr": "Yachting Jurnal 3.0: Hesaplar ve kartlar (nakit, banka, kart, avans), kart ekstresi ve banka hareketleri raporları, birden çok tekne ve şirket (konsolide) raporu, 7 para birimi ve kur kaynağı, 7 dil (Türkçe, İngilizce, Fransızca, İtalyanca, İspanyolca, Almanca, Yunanca), değişiklik geçmişi ve silinen kayıt arşivi. Excel içe aktarma daha güvenli ve 7 dilde çalışır. Önemli güvenlik düzeltmeleri. Yeni paketler: Free, Starter, Pro, Advanced."
+  "en": "The cash rule is now chosen explicitly. The old rule takes all spending (cash and card) from the cash box, as in 2.5.0; the new rule leaves card and bank spending out of it. Books without accounts keep the 2.5.0 calculation (the carry-over difference of 3.0.0 is fixed); books that had cards or accounts entered in 3.0.0 are asked to choose. You can change it in Settings at any time. Monthly PDF and Excel reports are a single table.",
+  "tr": "Kasa kuralı artık açıkça seçilir. Eski kural 2.5.0 gibi bütün harcamaları (nakit ve kart) kasadan düşer; yeni kural kart ve banka harcamalarını kasadan düşmez. Hesap tanımlamamış defterlerde 2.5.0 hesabı korunur (3.0.0’daki devir farkı düzeltildi); 3.0.0’da kart ya da hesap girmiş defterlerde seçim sorulur. Ayarlar’dan istediğiniz zaman değiştirilebilir. Aylık PDF ve Excel raporları tek tablodur."
  },
- "dosya": "https://yachtingjurnal.com/guncelleme/KasaJurnali-Kurulum-3.0.0.exe",
- "boyut": 21530624,
- "sha256": "9403fe33d211155b8ab8883227d769f071711db976979f2d5b46ca16c2390a11",
+ "dosya": "https://yachtingjurnal.com/guncelleme/KasaJurnali-Kurulum-3.0.1.exe",
+ "boyut": 21591552,
+ "sha256": "2226835bbf12853f8826512b893d1421ac032eca0902da36235168ae16e8c1e9",
  "adres": "https://yachtingjurnal.com/guncelleme/",
- "imza": "ZwyhmHBMAiMV/03nBhGJR4AI0RxIa1X1iXfM071GnOL3YZVbdi75+AIvYQ/klcvKWHnQMDSNVzZYSctcrDQjBQ=="
+ "imza": "vudPgLx5L6q6xQOlLd0nNB/1APiOAatpy9dGMxgxjLyEiQVHPuZ/VG2P8bm0hJA4Kd2HyYhhvzJ4fPLCPKB7Dg=="
 }

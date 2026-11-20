@@ -165,14 +165,25 @@
   }
   const hesapBul = (set, id) => hesaplar(set).find(h => h.id === id) || null;
   // the account an entry belongs to (old entries: by payment method)
-  const hesapOf = e => e.hesap || (isOut(e) && e.pay === "kart" ? "kart" : "nakit");
+  // idx (kayitIndeksi) lets a refund without an account follow the expense it refunds (iadeOf): a refund of a card expense goes back to the card
+  const kayitIndeksi = items => { const m = new Map(); (Array.isArray(items) ? items : []).forEach(x => { if (x && x.id != null) m.set(x.id, x); }); return m; };
+  function hesapOf(e, idx) {
+    if (e.hesap) return e.hesap;
+    if (isOut(e) && e.pay === "kart") return "kart";
+    if (isIade(e)) {
+      if (e.pay === "kart") return "kart";
+      const o = idx && e.iadeOf != null ? idx.get(e.iadeOf) : null;
+      if (o && o !== e && !isIade(o) && !isTr(o)) return hesapOf(o, idx);
+    }
+    return "nakit";
+  }
   function hesapTur(set, id) { const h = hesapBul(set, id); return h ? h.tur : id === "kart" ? "kart" : id === "banka" ? "banka" : "nakit"; }
   // how an entry changes one account, in kuruş (+ in, − out)
-  function etki(e, id) {
+  function etki(e, id, idx) {
     if (!tutarGecerli(e)) return 0;
     const a = kr(e.amount);
     if (isTr(e)) return (hesapOf(e) === id ? -a : 0) + (e.hedef === id ? a : 0);
-    if (hesapOf(e) !== id) return 0;
+    if (hesapOf(e, idx) !== id) return 0;
     return isOut(e) ? -a : a;
   }
   // totals of a list: in = money coming in, out = expenses less refunds (transfers are neither)
@@ -181,13 +192,64 @@
 
   // opening balance of an account: the cash box keeps the book's opening; others their own
   const acilisOf = (set, h) => h.id === "nakit" ? kr(set.opening) : kr(h.acilis);
+  /* "Eski kural" (3.0.1): the 2.5.0 cash rule — remaining = opening + money in − ALL expenses (cash and card) + refunds.
+     The account rule (a card expense does not touch the cash box) applies only when the book says so.
+     The decision comes from ONE setting, set.hesapKurali ("eski" | "yeni"), never from the entries: an import, a sync from an
+     older device or a restored entry cannot change it. No setting (undefined) = the safe display default, "eski".
+     Under the old rule the `hesap` of entries is ignored and transfers are not part of the cash box. */
+  const eskiMod = set => !(set && set.hesapKurali === "yeni");
+  // a book still in its 2.5.0 state: no account of the user's own, no entry on another account, no transfer
+  function eskiDefter(set, items) {
+    set = set || {};
+    if (Array.isArray(set.hesaplar) && set.hesaplar.some(h => h && h.id !== "nakit")) return false;
+    return !(Array.isArray(items) ? items : []).some(e => e && (isTr(e) || (e.hesap && e.hesap !== "nakit")));
+  }
+  // the 2.5.0 cash box over a period: in = money in, out = expenses less refunds (kuruş integers inside)
+  function eskiKasa(items, set, p) {
+    let devir = kr(set.opening), gir = 0, cik = 0;
+    items.forEach(e => {
+      if (!e || isTr(e) || !hesabaGirer(e, set)) return;
+      const a = kr(e.amount), ay = (e.date || "").slice(0, 7), x = isIn(e) ? a : isIade(e) ? a : -a;   // + into the box, − out of it
+      if (p !== "all" && ay < p) { devir += x; return; }
+      if (p !== "all" && ay !== p) return;
+      if (isIn(e)) gir += a; else if (isIade(e)) cik -= a; else cik += a;
+    });
+    return { devir: tk(devir), in: tk(gir), out: tk(cik), kalan: tk(devir + gir - cik) };
+  }
+  // how an entry moves the cash box, in kuruş (eski: every expense, cash or card, leaves the box)
+  function kasaEtki(e, set, eski, idx) {
+    if (!tutarGecerli(e)) return 0;
+    if (eski) { if (isTr(e)) return 0; const a = kr(e.amount); return isOut(e) ? -a : a; }
+    return hesaplar(set).filter(h => h.tur === "nakit").reduce((s, h) => s + etki(e, h.id, idx), 0);
+  }
+  // does the entry show a cash-box balance in the ledger? (eski: every entry; else the cash accounts only)
+  const kasadaMi = (e, set, eski, idx) => eski ? !isTr(e) : hesapTur(set, hesapOf(e, idx)) === "nakit" || (isTr(e) && hesapTur(set, e.hedef) === "nakit");
+  // what each rule gives: the cash box under the old and the new rule (whole book), the closed months that would change, and
+  // how many entries are read differently (receipts paid by card without an account, money in by transfer/EFT without one)
+  function kuralEtkisi(items, set) {
+    items = Array.isArray(items) ? items : []; set = set || {};
+    const E = Object.assign({}, set, { hesapKurali: "eski" }), Y = Object.assign({}, set, { hesapKurali: "yeni" });
+    const kapali = (set.closed || []).filter(ayMi).slice().sort().map(ay => ({ ay, eski: kasaFor(items, E, ay).kalan, yeni: kasaFor(items, Y, ay).kalan })).filter(x => x.eski !== x.yeni);
+    return {
+      eski: kasaFor(items, E, "all").kalan, yeni: kasaFor(items, Y, "all").kalan, kapali,
+      kart: items.filter(e => isOut(e) && !e.hesap && e.pay === "kart" && hesabaGirer(e, set)).length,
+      havale: items.filter(e => isIn(e) && !e.hesap && (e.pay === "havale" || e.pay === "eft") && hesabaGirer(e, set)).length,
+      // money in without an account (any way of paying, "nakit" too): the account rule reads it as paid into the cash box
+      gelen: (g => ({ n: g.length, tutar: tk(g.reduce((a, e) => a + kr(e.amount), 0)) }))(items.filter(e => isIn(e) && !e.hesap && hesabaGirer(e, set))),
+      // what the other accounts would show under the account rule (cards: negative = debt)
+      hesaplar: hesaplar(Y).filter(h => h.tur !== "nakit").map(h => ({ id: h.id, ad: h.ad, tur: h.tur, kalan: hesapFor(items, Y, h.id, "all").kalan })).filter(h => h.kalan !== 0),
+      transfer: items.filter(e => isTr(e) && hesabaGirer(e, set)).length
+    };
+  }
   // one account over a period ("all" or "yyyy-mm"): devir, giren, cikan, kalan (amounts)
-  function hesapFor(items, set, id, p) {
+  function hesapFor(items, set, id, p, idx) {
+    idx = idx || kayitIndeksi(items);
     const h = hesapBul(set, id) || { id, tur: "nakit" };
+    if (id === "nakit" && eskiMod(set)) { const k = eskiKasa(items, set, p); return { devir: k.devir, giren: k.in, cikan: k.out, kalan: k.kalan }; }
     let devir = acilisOf(set, h), gir = 0, cik = 0;
     items.forEach(e => {
       if (!hesabaGirer(e, set)) return;
-      const x = etki(e, id); if (!x) return;
+      const x = etki(e, id, idx); if (!x) return;
       const ay = (e.date || "").slice(0, 7);
       if (p !== "all" && ay < p) devir += x;
       else if (p === "all" || ay === p) { if (x > 0) gir += x; else cik -= x; }
@@ -199,9 +261,11 @@
   //   out = money that left the box (cash expenses and transfers out of it)
   // A transfer between two cash accounts stays inside the box: it is neither in nor out (the balance is the same).
   function kasaFor(items, set, p) {
+    if (eskiMod(set)) return eskiKasa(items, set, p);
+    const idx = kayitIndeksi(items);
     const ids = hesaplar(set).filter(h => h.tur === "nakit").map(h => h.id);
     let devir = 0, gir = 0, cik = 0;
-    ids.forEach(id => { const k = hesapFor(items, set, id, p); devir += kr(k.devir); gir += kr(k.giren); cik += kr(k.cikan); });
+    ids.forEach(id => { const k = hesapFor(items, set, id, p, idx); devir += kr(k.devir); gir += kr(k.giren); cik += kr(k.cikan); });
     items.forEach(e => {
       if (!isTr(e) || !hesabaGirer(e, set)) return;
       const s = hesapOf(e); if (s === e.hedef || !ids.includes(s) || !ids.includes(e.hedef)) return;
@@ -210,7 +274,8 @@
     return { devir: tk(devir), in: tk(gir), out: tk(cik), kalan: tk(devir + gir - cik) };
   }
   // the whole book over a period: income, expenses (by account type), refunds, transfers — for the summary cards and reports
-  function ozetFor(items, set, p) {
+  function ozetFor(items, set, p, idx) {
+    idx = idx || kayitIndeksi(items);
     const its = (p === "all" ? items : items.filter(e => (e.date || "").slice(0, 7) === p)).filter(e => hesabaGirer(e, set));
     const r = { gelir: 0, gider: 0, iade: 0, transfer: 0, tur: {}, hesap: {} };
     its.forEach(e => {
@@ -218,7 +283,7 @@
       const a = kr(e.amount);
       if (isTr(e)) { r.transfer += a; return; }
       if (isIn(e)) { r.gelir += a; return; }
-      const id = hesapOf(e), tur = hesapTur(set, id), s = isIade(e) ? -a : a;
+      const id = hesapOf(e, idx), tur = hesapTur(set, id), s = isIade(e) ? -a : a;
       if (isIade(e)) r.iade += a;
       r.gider += s; r.tur[tur] = (r.tur[tur] || 0) + s; r.hesap[id] = (r.hesap[id] || 0) + s;
     });
@@ -227,13 +292,18 @@
   }
   // running balance after each entry, of the account it moves (transfers: the source account)
   function runningMap(items, set) {
-    const b = {}, m = {};
+    const b = {}, m = {}, idx = kayitIndeksi(items);
+    if (eskiMod(set)) {
+      let c = kr(set.opening);
+      items.slice().sort(cmpEntry).forEach(e => { if (hesabaGirer(e, set)) c += kasaEtki(e, set, true); m[e.id] = tk(c); });
+      return m;
+    }
     hesaplar(set).forEach(h => { b[h.id] = acilisOf(set, h); });
     items.slice().sort(cmpEntry).forEach(e => {
-      if (!hesabaGirer(e, set)) { m[e.id] = tk(b[hesapOf(e)] || 0); return; }
-      const ids = isTr(e) ? [hesapOf(e), e.hedef] : [hesapOf(e)];
-      ids.forEach(id => { if (id != null) b[id] = (b[id] || 0) + etki(e, id); });
-      m[e.id] = tk(b[hesapOf(e)] || 0);
+      if (!hesabaGirer(e, set)) { m[e.id] = tk(b[hesapOf(e, idx)] || 0); return; }
+      const ids = isTr(e) ? [hesapOf(e), e.hedef] : [hesapOf(e, idx)];
+      ids.forEach(id => { if (id != null) b[id] = (b[id] || 0) + etki(e, id, idx); });
+      m[e.id] = tk(b[hesapOf(e, idx)] || 0);
     });
     return m;
   }
@@ -309,9 +379,9 @@
   }
   const payName = p => p === "kart" ? t("Kart") : p === "nakit" ? t("Nakit") : p === "havale" ? t("Havale") : p === "eft" ? t("EFT") : "";
   // expenses split by kind of account: nakit = cash box, kart = cards, none = bank, advances and others
-  function paySplit(list, set) {
-    const r = { nakit: 0, kart: 0, none: 0 };
-    list.forEach(e => { if (!isOut(e) && !isIade(e) || !hesabaGirer(e, set)) return; const a = kr(e.amount) * (isIade(e) ? -1 : 1), tur = hesapTur(set || {}, hesapOf(e)); if (tur === "nakit") r.nakit += a; else if (tur === "kart") r.kart += a; else r.none += a; });
+  function paySplit(list, set, idx) {
+    const r = { nakit: 0, kart: 0, none: 0 }; idx = idx || kayitIndeksi(list);
+    list.forEach(e => { if (!isOut(e) && !isIade(e) || !hesabaGirer(e, set)) return; const a = kr(e.amount) * (isIade(e) ? -1 : 1), tur = hesapTur(set || {}, hesapOf(e, idx)); if (tur === "nakit") r.nakit += a; else if (tur === "kart") r.kart += a; else r.none += a; });
     r.nakit = tk(r.nakit); r.kart = tk(r.kart); r.none = tk(r.none); return r;
   }
   function catSplit(list) { const bc = {}; list.forEach(e => { if (!isOut(e) && !isIade(e) || !hesabaGirer(e)) return; const k = e.cat || "Kategorisiz"; bc[k] = (bc[k] || 0) + kr(e.amount) * (isIade(e) ? -1 : 1); }); return Object.entries(bc).map(([k, v]) => [k, tk(v)]).filter(x => x[1] !== 0).sort((a, b) => b[1] - a[1]); }
@@ -413,7 +483,7 @@
   const xRe = (keys, bas, tam) => new RegExp((bas ? "^" : "(?:^|[^\\p{L}\\p{N}])") + "(?:" + [].concat(keys).flatMap(xTerim).map(xEsc).join("|") + ")" + (tam ? "$" : "(?![\\p{L}\\p{N}])"), "u");
   let XC = null;   // built on first use: every dictionary is loaded by then
   const xc = () => XC || (XC = {
-    alan: [["yok", xRe(["Kasa etkisi"])], ["date", xRe(["Tarih"])], ["vendor", xRe(["Şirket", "Firma"])], ["desc", xRe(["Açıklama"])], ["out", xRe(["Harcama"])], ["in", xRe(["Gelen para"])], ["pay", xRe(["Hesap / kart"])], ["cat", xRe(["Kategori"])], ["note", xRe(["Not"])]],
+    alan: [["yok", xRe(["Kasa etkisi"])], ["date", xRe(["Tarih"])], ["vendor", xRe(["Şirket", "Firma"])], ["desc", xRe(["Açıklama"])], ["out", xRe(["Harcama"])], ["in", xRe(["Gelen para"])], ["pay", xRe(["Hesap / kart", "Ödeme"])], ["cat", xRe(["Kategori"])], ["note", xRe(["Not"])]],
     devir: xRe(["Devir"], true),
     odemeTransfer: xRe(["Ödeme / transfer"], true, true),   // the "Tür" cell of a transfer row on the Kartlar sheet
     toplam: xRe(["Toplam", "Kalan kasa", "Dönem kapandı"], true),
@@ -727,7 +797,7 @@
   Object.assign(KJ, {
     setLang, t, pad, r2, tl, num, qty, fx, dec, pct, ltStr, perL, CUR, curName, PARALAR, setPara, paraKodu, paraSym, kurStr, tp,
     KUR_KAYNAKLARI, dovizAlanlari, paraToplam, caprazKur, paraTablosu, kurlarFor, kurGecerli, hatirlananKur, kurHatirla, paraTani, paraUyumsuz, hesabaGirer, kayitParasi, paraOfSet: paraOf, todayISO, curYM, monthName, monthLabel, shortMon, addMonth, dmy, dateTime, esc, lower,
-    isIn, isOut, isTr, isIade, sums, cmpEntry, kasaFor, hesapFor, ozetFor, runningMap, HESAP_TURLERI, VARSAYILAN_HESAPLAR, hesaplar, hesapBul, hesapOf, hesapTur, etki, monthRange, ayMi, monthsWithData, isClosed, degisiklikEngeli, kapaliAyikla, tutarGecerli, gecersizKayitlar, CATS, catLabel, catKey, guessCat, payName, paySplit, catSplit,
+    isIn, isOut, isTr, isIade, sums, cmpEntry, kasaFor, hesapFor, ozetFor, runningMap, eskiMod, eskiDefter, kayitIndeksi, kasaEtki, kasadaMi, kuralEtkisi, HESAP_TURLERI, VARSAYILAN_HESAPLAR, hesaplar, hesapBul, hesapOf, hesapTur, etki, monthRange, ayMi, monthsWithData, isClosed, degisiklikEngeli, kapaliAyikla, tutarGecerli, gecersizKayitlar, CATS, catLabel, catKey, guessCat, payName, paySplit, catSplit,
     DILLER, LOC, DIL_ADI, dilGecerli, dilBul, sozluk, yasalNot,
     isFuel, fuelStats, parseLt, toNum, toNumInput, toNumKutu, amountNote, xlsAlan, xlsSatirTuru, xlsSayfaTuru, xlsOdemeTransferMi, xlsHesapEsle, xlsToplamEtiketi, xlsOdeme,
     YEREL_AYAR, damga, sabit, ayarFarki, birlestir, ayniMi, uzakHali, zamanOf

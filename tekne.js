@@ -75,7 +75,7 @@
   function tekneOzeti(defter, ym) {
     const set = nesne(nesne(defter).ayarlar), items = Array.isArray(nesne(defter).kayitlar) ? defter.kayitlar : [];
     const ay = items.filter(e => (e.date || "").slice(0, 7) === ym);
-    const oz = K.ozetFor(items, set, ym), sp = K.paySplit(ay, set);
+    const ix = K.kayitIndeksi(items), oz = K.ozetFor(items, set, ym, ix), sp = K.paySplit(ay, set, ix);
     return { para: paraOf(set), kalan: K.kasaFor(items, set, "all").kalan, gelen: oz.gelir, gider: oz.gider, nakit: sp.nakit, kart: sp.kart, diger: sp.none,
       fotosuz: ay.filter(e => K.isOut(e) && !e.photo).length, kayit: items.length };
   }
