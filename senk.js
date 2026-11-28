@@ -21,6 +21,21 @@
 
   const hata = (mesaj, kod, status) => { const e = new Error(mesaj); e.kod = kod || ""; e.status = status || 0; return e; };
   const cevrimdisi = () => hata(K.t("İnternet bağlantısı yok"), "cevrimdisi");
+  // A request to Google that never answers must not hold the synchronisation lock (S.calisiyor) for ever: it is cut after a while and counts as "offline" (the caller's catch),
+  // so the next synchronisation tries again. ms: sign-in and small calls 30 s, Drive calls 90 s, uploads 180 s (a photo on a slow mobile line).
+  const ASIM = { kucuk: 30000, lisans: 60000, api: 90000, yukleme: 180000 };
+  // a request that was cut by the time-out has its OWN code: unlike a missing connection it is not retried every 30 s (a big report would be sent again and again),
+  // the report queue gives it the growing waiting time of CT-R12 (drive-duzen.js). For everything else it counts as "offline" (kodAsim).
+  const zamanasimi = () => hata(K.t("İnternet bağlantısı yok"), "zamanasimi");
+  const asimMi = e => !!e && (e.name === "AbortError" || e.kod === "zamanasimi");
+  const baglantiYok = e => asimMi(e) ? zamanasimi() : cevrimdisi();
+  function zamanAsimli(url, secenek, ms) {
+    if (typeof AbortController === "undefined") return fetch(url, secenek);
+    const ac = new AbortController(), z = setTimeout(() => ac.abort(), ms || ASIM.api);
+    if (z && z.unref) z.unref();   // (node tests) the timer alone never keeps a process alive
+    // the timer is NOT stopped when the headers arrive: it also covers the reading of the body (a stalled download); an abort after a finished read changes nothing
+    return fetch(url, Object.assign({}, secenek, { signal: ac.signal })).catch(e => { clearTimeout(z); throw asimMi(e) ? zamanasimi() : e; });
+  }
 
   /* ---------------- connection to Google: through the program (computer) or directly (iPhone) ---------------- */
   function googleAyar() {
@@ -65,8 +80,8 @@
     kaydet: k => O.api("api/anahtar", { method: "POST", json: k }),
     async form(yol, alanlar) {
       let r;
-      try { r = await fetch(googleAyar().oauth + yol, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(alanlar).toString() }); }
-      catch (e) { throw cevrimdisi(); }
+      try { r = await zamanAsimli(googleAyar().oauth + yol, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(alanlar).toString() }, ASIM.kucuk); }
+      catch (e) { throw baglantiYok(e); }
       return { status: r.status, m: await r.json().catch(() => ({})) };
     },
     async durum() {
@@ -90,7 +105,7 @@
       if (status === 200 && m.refresh_token) {
         web.cihazKodu = "";
         const k = { yenileme: m.refresh_token, erisim: m.access_token, bitis: Date.now() + (m.expires_in || 3600) * 1000, hesap: "" };
-        try { const r = await fetch(a.oauth + "/tokeninfo?access_token=" + encodeURIComponent(k.erisim)); k.hesap = (await r.json()).email || ""; } catch (e) { }
+        try { const r = await zamanAsimli(a.oauth + "/tokeninfo?access_token=" + encodeURIComponent(k.erisim), {}, ASIM.kucuk); k.hesap = (await r.json()).email || ""; } catch (e) { }
         await web.kaydet(k); web._k = k;
         return { durum: "tamam", hesap: k.hesap };
       }
@@ -119,8 +134,8 @@
         const tok = await web.erisim(deneme > 0);
         const h = { Authorization: "Bearer " + tok }; if (tur) h["Content-Type"] = tur;
         let r;
-        try { r = await fetch(googleAyar().api + "/" + yol, { method, body: govde, headers: h }); }
-        catch (e) { throw cevrimdisi(); }
+        try { r = await zamanAsimli(googleAyar().api + "/" + yol, { method, body: govde, headers: h }, govde ? ASIM.yukleme : ASIM.api); }
+        catch (e) { throw baglantiYok(e); }
         if (r.status === 401 && deneme === 0) continue;
         return r;
       }
@@ -139,7 +154,7 @@
         const tok = await web.erisim(deneme > 0);
         const g2 = Object.assign({}, govde, { erisim: tok }, giris ? { cihaz: "iphone", surum: O.surum || "" } : {});
         let r;
-        try { r = await fetch(a.lisans, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(g2), redirect: "follow" }); }
+        try { r = await zamanAsimli(a.lisans, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(g2), redirect: "follow" }, ASIM.lisans); }
         catch (e) { return onbellek(cevrimdisi()); }
         son = r.ok ? await r.json().catch(() => null) : null;
         if (!son) return onbellek(hata(K.t("Erişim sunucusu yanıt vermedi."), "cevrimdisi"));
@@ -166,10 +181,11 @@
   async function istekOk(method, yol, govde, tur) {
     const r = await T().istek(method, yol, govde, tur);
     if (!r.ok) {
-      const b = await r.text().catch(() => ""); let m = ""; try { m = JSON.parse(b).error.message; } catch (e) { }
+      const b = await r.text().catch(() => ""); let m = "", neden = ""; try { const j = JSON.parse(b).error; m = j.message; neden = String(((j.errors || [])[0] || {}).reason || ""); } catch (e) { }
       // the Drive box was left unticked on Google's permission screen
       if (r.status === 403 && /insufficient/i.test(m)) throw hata(K.t("Google Drive izni verilmemiş. Oturumu kapatıp yeniden açın; Google’ın izin ekranında Google Drive kutusunu da işaretleyin."), "izin", 403);
-      throw hata("Google Drive: " + (m || ("HTTP " + r.status)), "drive", r.status);
+      const he = hata("Google Drive: " + (m || ("HTTP " + r.status)), "drive", r.status); he.neden = neden;   // Google's reason (storageQuotaExceeded, userRateLimitExceeded ...)
+      throw he;
     }
     return r;
   }
@@ -205,6 +221,7 @@
     const k = await klasor();
     const arsiv = Object.values(D.silinenKayitlar || {}).map(x => x && x.kayit || {});   // deleted entries can be restored, with their photos (gecmis.js)
     const gerekli = new Set([...(D.kayitlar || []), ...arsiv].map(e => e.photo).filter(x => typeof x === "string" && /^[a-f0-9]{24,40}$/.test(x)));
+    for (const id of (K.korunanFotoIdler ? K.korunanFotoIdler(D.ayarlar) : [])) gerekli.add(id);   // photos of entries cleared by "reset the book": kept 400 days (para-secim.js)
     const yerel = new Set((((await O.api("api/fotolar")) || {}).ids) || []);
     const uzak = new Map();
     let sayfa = "";
@@ -232,46 +249,20 @@
     return { gelen, giden, uzak };
   }
 
-  /* ---------------- monthly receipt archive: <folder>/Fişler/<2026-11 Kasım 2026>/<2026-11-24 Palamar 400,00 ₺>.jpg ----------------
-     Readable copies for the user, made inside Drive (nothing is uploaded again). The foto-<id>.jpg files above stay the
-     ones the devices synchronise from; the archive only ever adds copies, and moves one when an entry changes month.
-     Folders and copies are found by their appProperties, so the names may be in either language. */
-  const AP = (k, v) => "appProperties has { key='" + k + "' and value='" + v + "' }";
-  async function apListe(filtre, alanlar) {
-    const l = []; let sayfa = "";
-    do {
-      const r = await gjson("GET", "drive/v3/files?spaces=drive&pageSize=1000&orderBy=createdTime&q=" + enc(filtre + " and trashed=false") + "&fields=" + enc("nextPageToken,files(" + alanlar + ")") + (sayfa ? "&pageToken=" + enc(sayfa) : ""));
-      l.push(...(r.files || [])); sayfa = r.nextPageToken || "";
-    } while (sayfa);
-    return l;
-  }
-  async function apKlasor(anahtar, deger, ad, ust) {
-    const l = await apListe(AP(anahtar, deger) + " and mimeType='" + KLASOR_TUR + "'", "id");
-    if (l.length) return l[0].id;
-    return (await (await istekOk("POST", "drive/v3/files?fields=id", JSON.stringify({ name: ad, mimeType: KLASOR_TUR, parents: [ust], appProperties: { [anahtar]: deger } }), "application/json")).json()).id;
-  }
-  const dosyaAdi = s => s.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").replace(/\s+/g, " ").trim().slice(0, 120);
-  async function fisArsivi(D, uzak) {
-    const kayitlar = (D.kayitlar || []).filter(e => typeof e.photo === "string" && uzak.has(e.photo));
-    if (!kayitlar.length) return 0;
-    const fisler = S.fislerId || (S.fislerId = await apKlasor("kjFisler", "1", K.t("Fişler"), await klasor()));
-    const var_ = new Map();
-    for (const f of await apListe(AP("kjFis", "1"), "id,parents,appProperties")) { const p = f.appProperties || {}; if (p.kjFoto && !var_.has(p.kjFoto)) var_.set(p.kjFoto, f); }
-    const aylar = new Map();
-    const ayKlasoru = async ym => { if (!aylar.has(ym)) aylar.set(ym, await apKlasor("kjAy", ym, ym === "tarihsiz" ? K.t("Tarihsiz") : ym + " " + K.monthLabel(ym), fisler)); return aylar.get(ym); };
-    let n = 0;
-    for (const e of kayitlar) {
-      if (n >= 60) break;   // a large first archive continues on the next synchronisation
-      const ym = /^\d{4}-\d\d/.test(e.date || "") ? e.date.slice(0, 7) : "tarihsiz";
-      const ad = dosyaAdi([e.date || "", e.vendor || e.desc || "", (K.isIn(e) ? "+" : "") + K.tl(+e.amount || 0)].filter(Boolean).join(" ")) + ".jpg";
-      const f = var_.get(e.photo);
-      if (!f) {
-        await istekOk("POST", "drive/v3/files/" + enc(uzak.get(e.photo).id) + "/copy?fields=id", JSON.stringify({ name: ad, parents: [await ayKlasoru(ym)], appProperties: { kjFis: "1", kjFoto: e.photo, kjAy: ym } }), "application/json"); n++;
-      } else if ((f.appProperties || {}).kjAy !== ym) {
-        await istekOk("PATCH", "drive/v3/files/" + enc(f.id) + "?addParents=" + enc(await ayKlasoru(ym)) + "&removeParents=" + enc((f.parents || []).join(",")) + "&fields=id", JSON.stringify({ name: ad, appProperties: { kjAy: ym } }), "application/json"); n++;
-      }
-    }
-    return n;
+  /* ---------------- the Drive layout: receipt copies and reports by boat and month (drive-duzen.js) ---------------- */
+  let DD = null;
+  const dd = () => DD || (g.KJDriveDuzen ? (DD = g.KJDriveDuzen.olustur({ gjson, istek: istekOk, cokParca })) : null);
+  const tekneListesi = tumu => (S.ix.liste || []).map(t => ({ id: t.id, ad: K.tekneAdi({ tekneler: S.ix.liste }, t.id, (tumu[t.id] || {}).ayarlar || {}), defter: tumu[t.id] || {} }));
+  const raporTekneAdi = o => K.tekneAdi({ tekneler: S.ix.liste || [] }, o.tid, { name: o.defterAdi || "" });
+  // A finished report (PDF or Excel) for the month folder. Never throws; without a Google connection nothing is done.
+  // o: { tid, defterAdi, ym, ad, tur, blob } → { durum: "yuklendi" | "kuyrukta" | "kapali", yol }
+  async function raporYukle(o) {
+    if (!S.bagli || !izinli() || !dd() || !o || !o.blob || !/^\d{4}-\d\d$/.test(o.ym || "")) return { durum: "kapali" };
+    const yol = dd().yolMetni(raporTekneAdi(o), o.ym);
+    await dd().kuyrugaAl({ tid: o.tid || ANA, defterAdi: o.defterAdi || "", ym: o.ym, ad: o.ad, tur: o.tur, blob: o.blob });
+    if (S.calisiyor) return { durum: "kuyrukta", yol };   // the running synchronisation looks at the queue when it ends
+    try { const kalan = await dd().kuyrugaBak(raporTekneAdi); S.rapor = kalan; if (kalan) { const t0 = dd().sonKuyrukZamani(); planla(Math.max(30000, t0 ? t0 - Date.now() : 30000)); } return { durum: kalan ? "kuyrukta" : "yuklendi", yol }; }
+    catch (e) { return { durum: "kuyrukta", yol }; }
   }
 
   /* ---------------- one synchronisation ---------------- */
@@ -325,11 +316,15 @@
       if (ana && dosyalar.length === 1 && String(ana.version) === st.sonUzakSurum && yerel.rev === st.sonYerelRev && sebep !== "elle") return { defter: yerel.defter };   // nothing changed anywhere
       let uzak = null;
       for (const f of dosyalar) { const d = await defterOku(f.id); uzak = uzak ? K.birlestir(d, uzak) : d; }   // two devices may have created the file at the same moment
-      const birlesik = K.birlestir(yerel.defter, uzak);
+      // entries with an invalid date / currency are cleaned here, before the book is stored or written to Drive (CT-30, CT-31): a book is
+      // never refused for them, and the cleaned copy goes to Drive too, so the forged values do not travel on
+      const tm = K.defterTemizle(K.birlestir(yerel.defter, uzak), true), birlesik = tm.defter;
       let rev = yerel.rev, degisti = false;
       if (!K.ayniMi(birlesik, yerel.defter)) {
         try { rev = (await O.api("api/islem", { method: "POST", json: { islem: "senk", defter: birlesik, taban: yerel.rev }, headers: H })).rev; degisti = true; }
         catch (e) { if (e.status === 409 && deneme < 6) continue; throw e; }   // a change was saved meanwhile: start again with it
+        // warning only (the merged book is not changed): did incoming settings change the cash carried by a month closed here?
+        try { const ke = K.kapaliDonemEtkisi && K.kapaliDonemEtkisi(yerel.defter, birlesik); if (ke) kdBekleyen.push({ tekne: tid, tekneAdi: tekneAdiBul(tid, birlesik), ke }); } catch (e) { }
       }
       let surum = ana ? String(ana.version) : null;
       if (!uzak || dosyalar.length > 1 || !K.ayniMi(birlesik, uzak)) {
@@ -343,10 +338,20 @@
         ozet = { gelen: birlesik.kayitlar.filter(e => !yIds.has(e.id)).length, giden: birlesik.kayitlar.filter(e => !uIds.has(e.id)).length, toplam: birlesik.kayitlar.length };
       }
       st.sonYerelRev = rev; st.sonUzakSurum = surum;
+      if (tm.notlar.length) temizBekleyen.push({ tekne: tid, tekneAdi: tekneAdiBul(tid, birlesik), notlar: tm.notlar });
       return { defter: birlesik, degisti, uzakDegisti: surum !== (ana && String(ana.version)), ozet };
     }
   }
   function durumYaz(d) { S.durum = d; if (O.onDurum) O.onDurum(bilgi()); }
+  // warnings about closed months (K.kapaliDonemEtkisi) found during one synchronisation: collected here and handed over together
+  // when it ends (also when a later boat fails), so one boat's warning never overwrites another's and none is lost
+  let kdBekleyen = [], temizBekleyen = [];
+  const tekneAdiBul = (tid, defter) => { const t = (S.ix.liste || []).find(x => x.id === tid); return (t && t.ad) || ((defter && defter.ayarlar) || {}).name || ""; };
+  function kdBildir() {
+    const l = kdBekleyen, tz = temizBekleyen; kdBekleyen = []; temizBekleyen = [];
+    if (l.length && O.onKapaliDonem) { try { O.onKapaliDonem(l); } catch (e) { } }
+    if (tz.length && O.onTemizlenen) { try { O.onTemizlenen(tz); } catch (e) { } }
+  }
   async function esitle(sebep) {
     if (!izinli()) return;
     if (!S.bagli) return;
@@ -358,37 +363,55 @@
     try {
       if (S.ilk || Date.now() - S.klasorSon > 30 * 60000) { S.klasorId = null; S.klasorSon = Date.now(); }
       const ix = await indeksEsitle(sebep);
+      S.ix.liste = ix.indeks.tekneler;
       if (ix.degisti) yerelDegisti = true;
       const tumu = {};
       let uzakDegisti = false;
+      const tekneHatalari = [];   // a failing boat is reported at the end; the other boats and their photos go on (CT-31)
       for (const t of ix.indeks.tekneler) {
-        const r = await tekneEsitle(t.id, sebep);
+        let r;
+        try { r = await tekneEsitle(t.id, sebep); }
+        catch (e) { if (e && (e.kod === "bagli-degil" || e.kod === "baglanti-koptu" || e.kod === "izin" || e.kod === "cevrimdisi" || asimMi(e))) throw e; tekneHatalari.push(e); continue; }
         tumu[t.id] = r.defter || {};   // archived boats too: their photos stay
         if (r.degisti) yerelDegisti = true;
         if (r.uzakDegisti) uzakDegisti = true;
         if (r.ozet) { ozet = ozet || { gelen: 0, giden: 0, toplam: 0 }; for (const k in r.ozet) ozet[k] += r.ozet[k]; }
       }
-      // photos are shared by the boats: one pass over every boat's entries (so no boat's photo is taken for unused)
-      if (yerelDegisti || S.ilk || uzakDegisti || Date.now() - S.sonFoto > 10 * 60000) {
+      // photos are shared by the boats: one pass over every boat's entries (so no boat's photo is taken for unused).
+      // Not when a boat failed: its entries are unknown now, and its photos would be taken for unused and deleted.
+      if (!tekneHatalari.length && (yerelDegisti || S.ilk || uzakDegisti || Date.now() - S.sonFoto > 10 * 60000)) {
         const D = K.filoFotoKaynagi ? K.filoFotoKaynagi(tumu) : { kayitlar: Object.values(tumu).flatMap(d => d.kayitlar || []) };   // entries + archives of deleted entries (T-3)
         const f = await fotolar(D); S.sonFoto = Date.now();
         if (ozet) Object.assign(ozet, { fotoGelen: f.gelen, fotoGiden: f.giden });
-        try { await fisArsivi(D, f.uzak); } catch (e) { if (e.kod === "izin") throw e; console.warn("fiş arşivi:", e.message); }   // the archive never stops a synchronisation
+        // the Drive layout "Yachting Jurnal / <boat> / <month> / Fişler" (drive-duzen.js); it never stops a synchronisation, and a failure is tried again next time
+        try {
+          if (dd()) {
+            const fz = await dd().fisleriYaz(tekneListesi(tumu), f.uzak);
+            if (fz.kalan > 0 && !fz.kota) S.sonFoto = 0;   // a large first run goes on with the next synchronisation; a failing receipt never repeats the whole list (the 10-minute interval stays)
+            if (fz.kota && !S.kotaBildirildi) { S.kotaBildirildi = true; if (O.onFisUyari) O.onFisUyari("kota"); }
+            if (!fz.kota) S.kotaBildirildi = false;
+          }
+        } catch (e) { if (e.kod === "izin" || e.kod === "cevrimdisi" || e.kod === "bagli-degil" || e.kod === "baglanti-koptu" || asimMi(e)) throw e; console.warn("fiş düzeni:", e.message); }
         if (f.gelen) yerelDegisti = true;
       }
+      try { if (dd()) S.rapor = await dd().kuyrugaBak(raporTekneAdi); } catch (e) { if (e.kod === "izin") throw e; }   // reports waiting for Drive (no internet earlier)
+      if (tekneHatalari.length) throw tekneHatalari[0];   // after the other boats were synchronised; the status shows the error
       S.son = new Date(); S.hata = ""; S.kod = "";
       if (S.ilk && ozet && O.onBilgi) O.onBilgi(ozet);
       S.ilk = false;
       durumYaz("tamam");
     } catch (e) {
+      if (e && e.name === "AbortError") e = zamanasimi();   // cut while the answer's body was being read: the same as a cut request, never the raw "signal is aborted"
       S.kod = e.kod || ""; S.hata = e.message || String(e);
       if (S.kod === "bagli-degil" || S.kod === "baglanti-koptu") { S.bagli = false; S.hesap = ""; }
-      durumYaz(S.kod === "cevrimdisi" ? "cevrimdisi" : "hata");
+      durumYaz(S.kod === "cevrimdisi" || S.kod === "zamanasimi" ? "cevrimdisi" : "hata");
     } finally {
       S.calisiyor = false;
+      kdBildir();
       if (O.onDurum) O.onDurum(bilgi());
       if (yerelDegisti && O.onYerelDegisti) O.onYerelDegisti();
       if (S.tekrar) { S.tekrar = false; planla(1200); }
+      else if (S.rapor > 0 && S.durum === "tamam") { const t0 = dd() ? dd().sonKuyrukZamani() : 0; planla(Math.max(30000, t0 ? t0 - Date.now() : 30000)); }   // a report still waiting for Drive is tried again (CT-R11) when its waiting time is over (CT-R12: longer after each failure, 6 hours at most)
     }
   }
   function planla(ms) { clearTimeout(S.zaman); S.zaman = setTimeout(() => { S.zaman = null; esitle("degisiklik"); }, ms); }
@@ -439,11 +462,11 @@
   const lisansZamani = () => S.bagli && S.lisansAcik && Date.now() - S.lisansSon > (S.lisansSon ? LISANS_ARALIK : 110000);
   async function yonetim(govde) {
     const c = await T().yonetim(govde);
-    if (c.hata) throw hata({ yetki: K.t("Bu işlem için yetkiniz yok."), eposta: K.t("E-posta adresini kontrol edin."), tarih: K.t("Tarihi kontrol edin."), paket: K.t("Paketi kontrol edin."), fiyat: K.t("Fiyatı kontrol edin."), kayit: K.t("Hesap kaydı bulunamadı; uygulamayı yeniden açın."), yonetici: K.t("Yönetici hesabı uygulamadan silinemez."), yogun: K.t("Erişim sunucusu şu an çok yoğun; birkaç dakika sonra yeniden deneyin."), abonelik: K.t("Abonelik bilgisi bulunamadı; kasajurnali@gmail.com adresine yazın."), islem: K.t("Bu bölüm, erişim sunucusu güncellenince açılacak."), gecersiz: K.t("Google hesabı doğrulanamadı; yeniden oturum açın.") }[c.hata] || K.t("Erişim sunucusu yanıt vermedi."), c.hata);
+    if (c.hata) throw hata({ yetki: K.t("Bu işlem için yetkiniz yok."), eposta: K.t("E-posta adresini kontrol edin."), tarih: K.t("Tarihi kontrol edin (geçerli bir gün; bitiş en çok 10 yıl sonrası)."), paket: K.t("Paketi kontrol edin."), fiyat: K.t("Fiyatı kontrol edin."), para: K.t("Para birimini kontrol edin (3 harf, örn. EUR)."), kayit: K.t("Hesap kaydı bulunamadı; uygulamayı yeniden açın."), yonetici: K.t("Yönetici hesabı uygulamadan silinemez."), yogun: K.t("Erişim sunucusu şu an çok yoğun; birkaç dakika sonra yeniden deneyin."), abonelik: K.t("Abonelik bilgisi bulunamadı; kasajurnali@gmail.com adresine yazın."), islem: K.t("Bu bölüm, erişim sunucusu güncellenince açılacak."), gecersiz: K.t("Google hesabı doğrulanamadı; yeniden oturum açın.") }[c.hata] || K.t("Erişim sunucusu yanıt vermedi."), c.hata);
     return c;
   }
   async function cikis() {
-    await T().cikis();
+    try { await T().cikis(); } finally { try { if (dd()) await dd().kuyrukTemizle(); } catch (e) { } }   // reports waiting for this account's Drive are not sent to another account, even when signing out fails
     Object.assign(S, { bagli: false, hesap: "", durum: "kapali", hata: "", kod: "", son: null, tk: {}, ix: {}, ilk: true, klasorId: null, klasorSon: 0, lisans: null, lisansSon: 0, lisansHata: "" });
     if (O.onDurum) O.onDurum(bilgi());
   }
@@ -462,5 +485,5 @@
     return yenile().then(async b => { if (b.bagli) { await lisansDenetle(); esitle("acilis"); } return bilgi(); });
   }
 
-  g.KJSenk = { kur, esitle: () => esitle("elle"), degisti: () => { if (S.bagli && izinli()) planla(2500); }, baslat, bekle, cikis, bilgi, yenile, lisansDenetle, yonetim, izinli: () => izinli() };
+  g.KJSenk = { zamanAsimli, ASIM, asimMi, raporYukle, kur, esitle: () => esitle("elle"), degisti: () => { if (S.bagli && izinli()) planla(2500); }, baslat, bekle, cikis, bilgi, yenile, lisansDenetle, yonetim, izinli: () => izinli() };
 })(window);

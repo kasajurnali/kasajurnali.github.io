@@ -138,10 +138,14 @@ table.defter.ekst td { padding: 1.2mm 1.6mm; }
 /* photo appendix */
 .ekler h2 { font-size: 12pt; color: var(--navy); margin: 0 0 1mm; }
 .ekler .aciklama { font-size: 7.6pt; color: var(--muted); margin: 0 0 4mm; }
-figure { margin: 0 0 5mm; break-inside: avoid; border: .6pt solid var(--line); border-radius: 1.6mm; padding: 2.4mm; }
-figure figcaption { font-size: 8pt; margin-bottom: 2mm; display: flex; justify-content: space-between; gap: 4mm; }
+.fisgrid { font-size: 0; }
+figure { margin: 0 0 4mm; break-inside: avoid; border: .6pt solid var(--line); border-radius: 1.6mm; padding: 2mm; }
+.fisgrid figure { display: inline-block; vertical-align: top; box-sizing: border-box; width: 48.8%; margin: 0 1.2% 4mm 0; overflow: hidden; }
+.fisgrid figure:nth-child(2n) { margin-right: 0; }
+figure figcaption { font-size: 8pt; margin-bottom: 2mm; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 1mm 3mm; overflow-wrap: anywhere; }
 figure figcaption b { color: var(--navy); }
 figure img { display: block; max-width: 100%; max-height: 108mm; margin: 0 auto; object-fit: contain; }
+.fisgrid figure img { max-height: 72mm; }
 
 /* on-screen preview (only used when the PDF could not be made automatically) */
 @media screen {
@@ -156,9 +160,9 @@ figure img { display: block; max-width: 100%; max-height: 108mm; margin: 0 auto;
 </style>
 </head>
 <body>
-<button class="yazdir" onclick="window.print()">{{YAZDIR}}</button>{{GERI}}
+<button class="yazdir" id="yazdirBtn">{{YAZDIR}}</button>{{GERI}}
 <div id="r"></div>
-<script>window.__RAPOR = /*VERI*/null;</script>
+<script type="application/json" id="rapor-veri">/*VERI*/null</script>
 <script src="i18n.js"></script>
 <script src="dil/fr.js"></script>
 <script src="dil/it.js"></script>

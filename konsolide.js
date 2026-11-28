@@ -41,7 +41,7 @@
     const liste = (Array.isArray(tekneler) ? tekneler : []).filter(x => x && typeof x === "object");
     const tumAylar = new Set();
     const satirlar = liste.map((tk0, i) => {
-      const df = tk0.defter || {}, set = df.ayarlar || {}, items = (Array.isArray(df.kayitlar) ? df.kayitlar : []).filter(e => e && !e.silindi && (K.hesabaGirer ? K.hesabaGirer(e, set) : true));   // R7: other-currency entries never added
+      const df = tk0.defter || {}, set = df.ayarlar || {}, tumu = (Array.isArray(df.kayitlar) ? df.kayitlar : []).filter(e => e && !e.silindi), tix = K.kayitIndeksi(tumu), items = tumu.filter(e => K.hesabaGirer ? K.hesabaGirer(e, set, tix) : true);   // F-18: the refund of an entry that is out stays out   // R7: other-currency entries never added
       const para = paraOf(set);
       let aylar = aylarOf(items, donem);
       let devir, kalan;
@@ -62,7 +62,7 @@
         id: tk0.id != null ? String(tk0.id) : String(i + 1), ad: tk0.ad || set.name || "", para,
         devir, gelen: oz.gelir, harcama: oz.gider, iade: oz.iade, kalan,
         nakit: sp.nakit, kart: sp.kart, diger: sp.none, eski: K.eskiMod(set), islem: its.filter(e => !K.isTr(e)).length,
-        kategoriler: enBuyuk(bc, nKat), _bc: bc
+        kategoriler: enBuyuk(bc, nKat), _bc: bc, acilisUyari: K.gecersizAcilis ? K.gecersizAcilis(set).length : 0   // CT-T3: an opening above the ceiling counted as 0
       };
     });
     const toplamlar = {};
@@ -88,7 +88,7 @@
   }
 
   // warning for a consolidated period whose chosen months had gaps (the months in between were added)
-  const aradaAylarUyari = ms => t("Dönem ardışık olmalı: seçilen aylar arasındaki {aylar} de toplamlara dahil edildi.", { aylar: ms.map(K.monthLabel).join(", ") });
+  const aradaAylarUyari = ms => t("Dönem ardışık olmalı: seçilen aylar arasındaki {aylar} de toplamlara dâhil edildi.", { aylar: ms.map(K.monthLabel).join(", ") });
 
   /* oncekiIadeler(items): ids of refunds whose original expense is in an earlier month ("prior period refund").
      Such a refund lowers the expenses of the month it is entered in, so the report names it. */
@@ -103,7 +103,7 @@
      → [{ id, ad, sahip, son4, tur, islem, harcama (gross), iade, net, odeme (payments/transfers into it), kategoriler, liste }] */
   function kartEkstresi(items, set, ay) {
     const ix = K.kayitIndeksi(items);
-    const its = (items || []).filter(e => ayOf(e) === ay && (K.hesabaGirer ? K.hesabaGirer(e, set) : true)).sort(K.cmpEntry);
+    const its = (items || []).filter(e => ayOf(e) === ay && (K.hesabaGirer ? K.hesabaGirer(e, set, ix) : true)).sort(K.cmpEntry);
     return K.hesaplar(set).filter(h => h.tur !== "nakit" && h.tur !== "banka").map(h => {
       const liste = its.filter(e => K.etki(e, h.id, ix) !== 0 || (!K.isTr(e) && K.hesapOf(e, ix) === h.id && K.tutarGecerli(e) && +e.amount === 0));
       if (!liste.length) return null;
@@ -125,7 +125,7 @@
      → [{ id, ad, son4, devir, giris, cikis, kalan, satirlar: [{ e, giris, cikis, bakiye }] }] */
   function bankaHareketleri(items, set, ay) {
     const ix = K.kayitIndeksi(items);
-    const its = (items || []).filter(e => ayOf(e) === ay && (K.hesabaGirer ? K.hesabaGirer(e, set) : true)).sort(K.cmpEntry);
+    const its = (items || []).filter(e => ayOf(e) === ay && (K.hesabaGirer ? K.hesabaGirer(e, set, ix) : true)).sort(K.cmpEntry);
     return K.hesaplar(set).filter(h => h.tur === "banka").map(h => {
       const ilgili = its.filter(e => K.etki(e, h.id, ix) !== 0);
       if (!ilgili.length) return null;
@@ -140,7 +140,7 @@
   const t = (s, v) => K.t(s, v);
   const up = s => String(s).toLocaleUpperCase(K.loc);   // the language of the file (it/fr/es/de: "i" stays "I", never "İ")
   const serial = iso => { const [y, m, d] = iso.split("-").map(Number); return (Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 864e5; };
-  const VARS = { nakit: "Nakit kasa", kart: "Kredi kartı", banka: "Banka hesabı" };
+  const VARS = Object.assign(Object.create(null), { nakit: "Nakit kasa", kart: "Kredi kartı", banka: "Banka hesabı" });
   const hesapEtiket = (set, id) => { const h = K.hesapBul(set, id); if (!h) return t(VARS[id] || "Nakit kasa"); return (VARS[h.id] && h.ad === VARS[h.id] ? t(h.ad) : h.ad) + (h.son4 ? " ··" + h.son4 : ""); };
   const donemYazi = aylar => !aylar.length ? "" : aylar.length > 1 ? K.monthLabel(aylar[0]) + " – " + K.monthLabel(aylar[aylar.length - 1]) : K.monthLabel(aylar[0]);
 

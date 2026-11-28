@@ -1,7 +1,11 @@
 /* Yachting Jurnal — printable A4 cash report. Built from the data the program injects. */
 "use strict";
 (function () {
-  const K = window.KJ, D = window.__RAPOR;
+  const K = window.KJ;
+  // GT-7: veri satır içi betikte değil, çalışmayan bir JSON bloğunda gelir (CSP script-src 'self'); testler window.__RAPOR verebilir
+  let D = window.__RAPOR;
+  if (!D && typeof document !== "undefined" && document.getElementById) { const vb = document.getElementById("rapor-veri"); if (vb) { try { D = JSON.parse(vb.textContent); } catch (e) { D = null; } } }
+  if (typeof document !== "undefined" && document.getElementById) { const yb = document.getElementById("yazdirBtn"); if (yb && typeof yb.addEventListener === "function") yb.addEventListener("click", () => window.print()); }
   const root = document.getElementById("r");
   if (!D) { root.textContent = "Rapor verisi bulunamadı. / Report data not found."; return; }
   // iPhone: the window leaves the boats and the company for the report in this tab's storage ("ek=1" in the address)
@@ -34,7 +38,7 @@
 
   // photo appendix numbering
   const ek = {}; const ekList = [];
-  if (D.fotograflar) months.forEach(m => inMonth(m).forEach(e => { if (e.photo) { ek[e.id] = ekList.length + 1; ekList.push(e); } }));
+  if (D.fotograflar) months.forEach(m => inMonth(m).forEach(e => { if (typeof e.photo === "string" && /^[a-f0-9]{24,40}$/.test(e.photo)) { ek[e.id] = ekList.length + 1; ekList.push(e); } }));
 
   const flags = '<span class="ics" aria-hidden="true"><i class="k"></i><i class="a"></i><i class="s"></i><i class="a"></i></span>';
   let sirketBas = !!sirketAd;   // the company name goes on the cover (first page) only
@@ -42,7 +46,7 @@
     '<header class="rh"><div><div class="ust">' + flags + '<span>Yachting Jurnal</span></div>' + (sirketBas ? (sirketBas = false, '<div class="sirket">' + esc(sirketAd) + '</div>') : "") + '<div class="kurum">' + esc(kurum || name) + '</div><h1>' + esc(title) + '</h1></div>' +
     '<div class="rh-r"><div class="etk">' + esc(t("Dönem")) + '</div><div class="donem">' + esc(period) + '</div><div class="meta">' + esc(t("Rapor tarihi: {tarih}", { tarih: madeStr })) + '</div>' + (status || "") + '</div></header>';
 
-  const VARS = { nakit: "Nakit kasa", kart: "Kredi kartı", banka: "Banka hesabı" };
+  const VARS = Object.assign(Object.create(null), { nakit: "Nakit kasa", kart: "Kredi kartı", banka: "Banka hesabı" });
   const hesapAd = id => { const h = K.hesapBul(set, id); if (!h) return t(VARS[id] || "Nakit kasa"); return (VARS[h.id] && h.ad === VARS[h.id] ? t(h.ad) : h.ad) + (h.son4 ? " ··" + h.son4 : ""); };
   const ix = K.kayitIndeksi(items), eski = K.eskiMod(set);   // no accounts or cards: every expense leaves the cash box (2.5.0 rule)
   const nakitMi = id => K.hesapTur(set, id) === "nakit";
@@ -73,6 +77,7 @@
       '<div class="kutu"><div class="l">' + esc(t("Toplam harcama (tüm hesaplar)")) + '</div><div class="v">' + tP(T.harcama, T.para) + '</div><div class="s">' + esc(t("Nakit") + " " + tP(T.nakit, T.para) + " · " + t("Kart") + " " + tP(T.kart, T.para)) + '</div></div>' +
       '<div class="kutu kalan' + (T.kalan < 0 ? " acik" : "") + '"><div class="l">' + esc(T.kalan < 0 ? t("Kasa açığı") : t("Kalan kasa")) + '</div><div class="v">' + tP(T.kalan, T.para) + '</div></div></div>';
     else html += '<p class="uyari">' + esc(t("Tekneler farklı para birimleriyle tutuluyor. Tutarlar kur çevrimi yapılmadan, para birimine göre ayrı toplanmıştır.")) + '</p>';
+    { const ac = kons.tekneler.filter(s => s.acilisUyari); if (ac.length) html += '<p class="uyari">' + esc(t("Başlangıç tutarı {sinir} sınırını aşıyor ya da okunamıyor; 0 sayıldı ({liste}). Ayarlar’dan düzeltin.", { sinir: new Intl.NumberFormat(K.lang === "tr" ? "tr-TR" : K.lang).format(K.TUTAR_USTSINIR), liste: ac.map(s => s.ad || s.id).join(", ") })) + '</p>'; }
     if (kons.eklenenAylar && kons.eklenenAylar.length && K.aradaAylarUyari) html += '<p class="uyari">' + esc(K.aradaAylarUyari(kons.eklenenAylar)) + '</p>';
     html += '<table class="kapak kons"><thead><tr><th>' + esc(t("Tekne")) + '</th><th>' + esc(t("Para")) + '</th><th class="n">' + esc(t("Devir")) + '</th><th class="n">' + esc(t("Gelen para")) + '</th><th class="n">' + esc(t("Harcama")) + '</th><th class="n">' + esc(t("Nakit")) + '</th><th class="n">' + esc(t("Kart")) + '</th><th class="n">' + esc(t("Diğer")) + '</th><th class="n">' + esc(t("Kalan kasa")) + '</th></tr></thead><tbody>' + rows + '</tbody></table>' +
       '<p class="formul" style="margin-top:3mm">' + esc(kons.eski ? t("Hesap tanımlamamış teknelerde bütün harcamalar kasadan düşer; hesap kuralına geçmiş teknelerde kart, banka ve diğer hesaplardan yapılan harcamalar nakit kasayı azaltmaz.") : t("Kalan kasa yalnızca nakit kasadır; kart, banka ve diğer hesaplardan yapılan harcamalar nakit kasayı azaltmaz.")) + '</p>';
@@ -128,15 +133,16 @@
       '<div class="kutu kalan' + (k.kalan < 0 ? " acik" : "") + '"><div class="l">' + esc(k.kalan < 0 ? t("Kasa açığı") : eski ? t("Kalan kasa") : t("Kalan nakit kasa")) + '</div><div class="v">' + tl(k.kalan) + '</div><div class="s">' + esc(closed ? t("{ay} devrine geçti", { ay: monthLabel(addMonth(m, 1)) }) : t("Dönem sonu")) + '</div></div></div>' +
       (eski ? "" : tumHesaplar(o.gelir, o.gider, t("{n} kayıt", { n: its.filter(isIn).length }), sp.kart || sp.none ? t("Nakit") + " " + tl(sp.nakit) + " · " + t("Kart") + " " + tl(sp.kart) + (sp.none ? " · " + t("Banka ve diğer") + " " + tl(sp.none) : "") : t("{n} fiş", { n: its.filter(K.isOut).length }))) +
       '<p class="formul">' + esc(eski ? t("Kalan kasa = Devir {devir} + kasaya giren {gir} − kasadan çıkan {cik}. Bütün harcamalar (nakit ve kart) kasadan düşer.", { devir: tl(k.devir), gir: tl(k.in), cik: tl(k.out) }) : t("Kalan kasa = Devir {devir} + kasaya giren {gir} − kasadan çıkan {cik}. Kart, banka ve avans harcamaları nakit kasayı değiştirmez; “Kasa” sütunu yalnızca nakit kayıtlarda kasada kalan parayı gösterir.", { devir: tl(k.devir), gir: tl(k.in), cik: tl(k.out) })) +
-      (oncekiTop ? " " + esc(t("Önceki dönem iadesi {tutar}: önceki aylara ait giderlerin iadesi bu ayın harcamasını azaltır.", { tutar: tl(oncekiTop) })) : "") + '</p>';
+      (oncekiTop ? " " + esc(t("Önceki dönem iadesi {tutar}: önceki aylara ait harcamaların iadesi bu ayın harcamasını azaltır.", { tutar: tl(oncekiTop) })) : "") + '</p>';
     html += '<table class="defter"><colgroup><col style="width:18.5mm"><col style="width:30mm"><col><col style="width:22mm"><col style="width:20mm"><col style="width:21mm"><col style="width:21mm"><col style="width:21mm"></colgroup>' +
-      '<thead><tr><th>' + esc(t("Tarih")) + '</th><th>' + esc(t("Şirket / kimden")) + '</th><th>' + esc(t("Açıklama")) + '</th><th>' + esc(t("Kategori")) + '</th><th>' + esc(eski ? t("Ödeme") : t("Hesap")) + '</th><th class="n">' + esc(K.tp("Harcama ₺")) + '</th><th class="n">' + esc(K.tp("Gelen ₺")) + '</th><th class="n">' + esc(K.tp("Kasa ₺")) + '</th></tr></thead><tbody>' +
-      '<tr class="devir"><td class="mono tarih">' + dmy(m + "-01") + '</td><td colspan="6">' + esc(t("Devir · önceki dönemden kalan kasa")) + '</td><td class="n' + (k.devir < 0 ? " eksi" : "") + '">' + num(k.devir) + '</td></tr>';
+      '<thead><tr><th>' + esc(t("Tarih")) + '</th><th>' + esc(t("Firma / kimden")) + '</th><th>' + esc(t("Açıklama")) + '</th><th>' + esc(t("Kategori")) + '</th><th>' + esc(eski ? t("Ödeme") : t("Hesap")) + '</th><th class="n">' + esc(K.tp("Harcama ₺")) + '</th><th class="n">' + esc(K.tp("Gelen ₺")) + '</th><th class="n">' + esc(K.tp("Kasa ₺")) + '</th></tr></thead><tbody>' +
+      '<tr class="devir"><td class="mono tarih">' + esc(dmy(m + "-01")) + '</td><td colspan="6">' + esc(t("Devir · önceki dönemden kalan kasa")) + '</td><td class="n' + (k.devir < 0 ? " eksi" : "") + '">' + num(k.devir) + '</td></tr>';
     if (!its.length) html += '<tr><td colspan="8" class="bos">' + esc(t("Bu dönemde kayıt yok.")) + '</td></tr>';
     its.forEach(e => {
       const inn = isIn(e), tr = K.isTr(e), iade = K.isIade(e), hid = K.hesapOf(e, ix), note = [K.amountNote(e), e.note].filter(Boolean).join(" · ");
+      const dn = K.dislamaNedeni ? K.dislamaNedeni(e, set, ix) : null, disi = !!dn && dn !== "tutar";   // CT-T6: a row that is not in the totals (a refund of an excluded entry, a reset book's old entry...) says so
       const kasada = eski ? !tr : nakitMi(hid) || (tr && nakitMi(e.hedef)), kasaRun = eski || nakitMi(hid);
-      html += '<tr><td class="mono tarih">' + dmy(e.date) + '</td><td>' + esc(e.vendor || "") + '</td><td>' + esc(e.desc || "") + (ek[e.id] ? '<span class="ek">' + esc(t("EK {n}", { n: ek[e.id] })) + '</span>' : "") + (note ? '<span class="alt">' + esc(note) + '</span>' : "") + '</td><td class="k">' + esc(inn ? t("Gelen para") : tr ? t("Transfer") : (iade ? (onceki.has(e.id) ? t("Önceki dönem iadesi") : t("İade")) + " · " : "") + K.catLabel(e.cat)) + '</td><td class="k">' + esc(tr ? hesapAd(hid) + " → " + hesapAd(e.hedef) : eski ? odemeEski(e) : hesapAd(hid)) + '</td>' +
+      html += '<tr><td class="mono tarih">' + esc(dmy(e.date)) + '</td><td>' + esc(e.vendor || "") + '</td><td>' + esc(e.desc || "") + (ek[e.id] ? '<span class="ek">' + esc(t("EK {n}", { n: ek[e.id] })) + '</span>' : "") + (note ? '<span class="alt">' + esc(note) + '</span>' : "") + (disi ? '<span class="alt toplamdisi" style="color:var(--red);font-weight:600">' + esc(t("toplam dışı")) + '</span>' : "") + '</td><td class="k">' + esc(inn ? t("Gelen para") : tr ? t("Transfer") : (iade ? (onceki.has(e.id) ? t("Önceki dönem iadesi") : t("İade")) + " · " : "") + K.catLabel(e.cat)) + '</td><td class="k">' + esc(tr ? hesapAd(hid) + " → " + hesapAd(e.hedef) : eski ? odemeEski(e) : hesapAd(hid)) + '</td>' +
         '<td class="n">' + (inn || tr ? "" : (iade ? "−" : "") + num(e.amount)) + '</td><td class="n g">' + (inn ? num(e.amount) : "") + '</td><td class="n' + (kasada && run[e.id] < 0 ? " eksi" : " k") + '">' + (kasada && kasaRun ? num(run[e.id]) : kasada ? "+" + num(e.amount) : "—") + '</td></tr>';
     });
     html += '<tr class="toplam"><td colspan="5">' + esc(t("Toplam")) + '</td><td class="n">' + num(o.gider) + '</td><td class="n g">' + num(o.gelir) + '</td><td class="n"></td></tr>' +
@@ -155,7 +161,7 @@
     const oh = K.ozetFor(its, set, "all", ix).hesap;
     let html = "";
     if (outs.length) {
-      const cats = K.catSplit(outs), cmax = cats[0][1] || 1, tot = outTotal || 1;
+      const cats = K.catSplit(outs, ix), cmax = (cats[0] && cats[0][1]) || 1, tot = outTotal || 1;
       const left = '<div class="panel"><h3>' + esc(whole ? t("Dönem boyunca kategoriye göre harcama") : t("Kategoriye göre harcama")) + '</h3><table class="ozt">' + cats.map(([c, v]) => '<tr><td>' + esc(K.catLabel(c)) + '<div class="cubuk"><i style="width:' + Math.max(1.5, v / cmax * 100).toFixed(1) + '%"></i></div></td><td class="y n">' + K.pct(Math.round(v / tot * 100)) + '</td><td class="n">' + tl(v) + '</td></tr>').join("") + '</table></div>';
       const pr = Object.entries(oh).filter(x => x[1] > 0).sort((a, b) => b[1] - a[1]).map(([id, v]) => { const h = K.hesapBul(set, id), n = outs.filter(e => K.hesapOf(e) === id && K.isOut(e)).length; return [hesapAd(id) + (h && h.sahip ? " · " + h.sahip : ""), v, n]; }), pmax = Math.max(...pr.map(r => r[1]), 1);
       let right = eski ? "" : '<div class="panel"><h3>' + esc(t("Hesaplara ve kartlara göre harcama")) + '</h3><table class="ozt">' + pr.map(([n, v, c]) => '<tr><td>' + esc(n) + ' <span class="y">· ' + esc(t("{n} işlem", { n: c })) + '</span><div class="cubuk p"><i style="width:' + Math.max(1.5, v / pmax * 100).toFixed(1) + '%"></i></div></td><td class="y n">' + K.pct(Math.round(v / tot * 100)) + '</td><td class="n">' + tl(v) + '</td></tr>').join("") + '</table></div>';
@@ -164,7 +170,7 @@
       const doviz = its.filter(e => e.cur && e.cur !== K.paraKodu() && +e.fxAmount > 0);
       if (doviz.length) { // totals per currency AND direction (expense, refund, income, transfer are never added together), in cents
         const TUR = [["out", "Harcama"], ["iade", "İade"], ["in", "Gelen para"], ["tr", "Transfer"]], turOf = e => isIn(e) ? "in" : K.isTr(e) ? "tr" : K.isIade(e) ? "iade" : "out";
-        const byCur = {}; doviz.forEach(e => { const b = byCur[e.cur] || (byCur[e.cur] = {}), k = turOf(e); b[k] = (b[k] || 0) + Math.round(+e.fxAmount * 100); });
+        const byCur = Object.create(null); doviz.forEach(e => { const b = byCur[e.cur] || (byCur[e.cur] = {}), k = turOf(e); b[k] = (b[k] || 0) + Math.round(+e.fxAmount * 100); });
         right += '<div class="panel"><h3>' + esc(t("Dövizli kayıtlar")) + '</h3><table class="ozt">' + Object.entries(byCur).map(([c, b]) => TUR.filter(([k]) => b[k]).map(([k, ad]) => '<tr><td>' + esc(K.curName(c) + " · " + t(ad)) + '</td><td class="n">' + esc((k === "iade" ? "−" : "") + K.fx(b[k] / 100, c)) + '</td></tr>').join("")).join("") + '</table><p class="formul" style="margin:1.4mm 0 0">' + esc(K.paraKodu() === "TRY" ? t("Dövizli tutarlar, kullanıcının kayıt sırasında girdiği kurla TL’ye çevrilip kasaya işlenmiştir.") : t("Dövizli tutarlar, kayıt sırasında girilen kurla defterin para birimine ({para}) çevrilip işlenmiştir.", { para: K.paraKodu() })) + '</p></div>'; }
       html += '<div class="alt-grid">' + left + '<div>' + right + '</div></div>';
     }
@@ -184,7 +190,7 @@
       if (c.kategoriler.length) h += '<table class="ozt kat">' + c.kategoriler.map(([k, v]) => '<tr><td>' + esc(K.catLabel(k)) + '<div class="cubuk p"><i style="width:' + Math.max(1.5, Math.abs(v) / cmax * 100).toFixed(1) + '%"></i></div></td><td class="y n">' + (c.net > 0 ? K.pct(Math.round(v / c.net * 100)) : "") + '</td><td class="n">' + tl(v) + '</td></tr>').join("") + '</table>';
       h += '<table class="defter ekst"><colgroup><col style="width:18.5mm"><col style="width:38mm"><col><col style="width:26mm"><col style="width:24mm"></colgroup><thead><tr><th>' + esc(t("Tarih")) + '</th><th>' + esc(t("Firma")) + '</th><th>' + esc(t("Açıklama")) + '</th><th>' + esc(t("Kategori")) + '</th><th class="n">' + esc(t("Tutar")) + '</th></tr></thead><tbody>' +
         c.liste.map(e => { const tr = K.isTr(e), inn = isIn(e), iade = K.isIade(e), note = K.amountNote(e);
-          return '<tr><td class="mono tarih">' + dmy(e.date) + '</td><td>' + esc(e.vendor || "") + '</td><td>' + esc(e.desc || "") + (note ? '<span class="alt">' + esc(note) + '</span>' : "") + '</td><td class="k">' + esc(tr ? t("Transfer") + " · " + (e.hedef === c.id ? hesapAd(K.hesapOf(e)) + " →" : "→ " + hesapAd(e.hedef)) : inn ? t("Gelen para") : (iade ? t("İade") + " · " : "") + K.catLabel(e.cat)) + '</td>' +
+          return '<tr><td class="mono tarih">' + esc(dmy(e.date)) + '</td><td>' + esc(e.vendor || "") + '</td><td>' + esc(e.desc || "") + (note ? '<span class="alt">' + esc(note) + '</span>' : "") + '</td><td class="k">' + esc(tr ? t("Transfer") + " · " + (e.hedef === c.id ? hesapAd(K.hesapOf(e)) + " →" : "→ " + hesapAd(e.hedef)) : inn ? t("Gelen para") : (iade ? t("İade") + " · " : "") + K.catLabel(e.cat)) + '</td>' +
             '<td class="n' + (iade || inn || (tr && e.hedef === c.id) ? " g" : "") + '">' + (iade || inn || (tr && e.hedef === c.id) ? "−" : "") + num(e.amount) + '</td></tr>'; }).join("") +
         '<tr class="toplam"><td colspan="4">' + esc(t("Net harcama")) + '</td><td class="n">' + num(c.net) + '</td></tr></tbody></table></div>';
     });
@@ -193,9 +199,9 @@
       bankalar.forEach(b => {
         h += '<div class="kart-blok"><div class="kart-bas"><div><b>' + esc(hesapAd(b.id)) + '</b>' + (b.sahip ? '<div class="sahip">' + esc(t("Sahibi: {ad}", { ad: b.sahip })) + '</div>' : "") + '</div></div>' +
           '<table class="defter ekst"><colgroup><col style="width:18.5mm"><col style="width:34mm"><col><col style="width:23mm"><col style="width:23mm"><col style="width:25mm"></colgroup><thead><tr><th>' + esc(t("Tarih")) + '</th><th>' + esc(t("Firma")) + '</th><th>' + esc(t("Açıklama")) + '</th><th class="n">' + esc(t("Giriş")) + '</th><th class="n">' + esc(t("Çıkış")) + '</th><th class="n">' + esc(t("Bakiye")) + '</th></tr></thead><tbody>' +
-          '<tr class="devir"><td class="mono tarih">' + dmy(m + "-01") + '</td><td colspan="4">' + esc(t("Devir · önceki dönemden kalan bakiye")) + '</td><td class="n' + (b.devir < 0 ? " eksi" : "") + '">' + num(b.devir) + '</td></tr>' +
+          '<tr class="devir"><td class="mono tarih">' + esc(dmy(m + "-01")) + '</td><td colspan="4">' + esc(t("Devir · önceki dönemden kalan bakiye")) + '</td><td class="n' + (b.devir < 0 ? " eksi" : "") + '">' + num(b.devir) + '</td></tr>' +
           b.satirlar.map(r => { const e = r.e, tr = K.isTr(e);
-            return '<tr><td class="mono tarih">' + dmy(e.date) + '</td><td>' + esc(e.vendor || "") + '</td><td>' + esc(e.desc || (tr ? t("Transfer") : "")) + (tr ? '<span class="alt">' + esc(hesapAd(K.hesapOf(e)) + " → " + hesapAd(e.hedef)) + '</span>' : "") + '</td><td class="n g">' + (r.giris ? num(r.giris) : "") + '</td><td class="n">' + (r.cikis ? num(r.cikis) : "") + '</td><td class="n' + (r.bakiye < 0 ? " eksi" : "") + '">' + num(r.bakiye) + '</td></tr>'; }).join("") +
+            return '<tr><td class="mono tarih">' + esc(dmy(e.date)) + '</td><td>' + esc(e.vendor || "") + '</td><td>' + esc(e.desc || (tr ? t("Transfer") : "")) + (tr ? '<span class="alt">' + esc(hesapAd(K.hesapOf(e)) + " → " + hesapAd(e.hedef)) + '</span>' : "") + '</td><td class="n g">' + (r.giris ? num(r.giris) : "") + '</td><td class="n">' + (r.cikis ? num(r.cikis) : "") + '</td><td class="n' + (r.bakiye < 0 ? " eksi" : "") + '">' + num(r.bakiye) + '</td></tr>'; }).join("") +
           '<tr class="toplam"><td colspan="3">' + esc(t("Toplam")) + '</td><td class="n g">' + num(b.giris) + '</td><td class="n">' + num(b.cikis) + '</td><td class="n"></td></tr>' +
           '<tr class="kalan' + (b.kalan < 0 ? " acik" : "") + '"><td colspan="5">' + esc(t("Dönem sonu bakiye")) + '</td><td class="n">' + num(b.kalan) + '</td></tr></tbody></table></div>';
       });
@@ -204,20 +210,28 @@
   }
   function imza() {
     return '<div class="imza"><div class="k"><div class="r">' + esc(t("Hazırlayan")) + '</div><div class="ad">' + esc(set.preparedBy || "") + '</div><div class="tr">' + esc(t("Tarih: {tarih}", { tarih: madeStr })) + '</div><div class="bosluk"></div><div class="r">' + esc(t("İmza")) + '</div></div>' +
-      '<div class="k"><div class="r">' + esc(t("Kontrol eden / Onaylayan")) + '</div><div class="ad">' + esc(set.approvedBy || "") + '</div><div class="tr">' + esc(t("Tarih: {tarih}", { tarih: "……/……/…………" })) + '</div><div class="bosluk"></div><div class="r">' + esc(t("İmza")) + '</div></div></div>';
+      '<div class="k"><div class="r">' + esc(t("Kontrol eden / onaylayan")) + '</div><div class="ad">' + esc(set.approvedBy || "") + '</div><div class="tr">' + esc(t("Tarih: {tarih}", { tarih: "……/……/…………" })) + '</div><div class="bosluk"></div><div class="r">' + esc(t("İmza")) + '</div></div></div>';
   }
 
   if (ekList.length) {
     html += open("ekler") + '<h2>' + esc(t("Ekler · Fiş fotoğrafları")) + '</h2><p class="aciklama">' + esc(name + " · " + span + ". " + t("Numaralar defter tablosundaki “EK” işaretleriyle eşleşir.")) + '</p>' +
-      ekList.map((e, i) => '<figure><figcaption><span><b>' + esc(t("EK {n}", { n: i + 1 })) + '</b> · ' + dmy(e.date) + ' · ' + esc(e.vendor || e.desc || "") + (e.vendor && e.desc ? " · " + esc(e.desc) : "") + '</span><span class="tutar">' + tl(e.amount) + '</span></figcaption><img alt="' + esc(t("EK {n}", { n: i + 1 })) + '" src="foto/' + esc(e.photo) + (token ? '?t=' + token : '') + '"></figure>').join("") + '</section>';
+      '<div class="fisgrid">' + ekList.map((e, i) => '<figure><figcaption><span><b>' + esc(t("EK {n}", { n: i + 1 })) + '</b> · ' + esc(dmy(e.date)) + ' · ' + esc(e.vendor || e.desc || "") + (e.vendor && e.desc ? " · " + esc(e.desc) : "") + '</span><span class="tutar">' + tl(e.amount) + '</span></figcaption><img alt="' + esc(t("EK {n}", { n: i + 1 })) + '" src="foto/' + esc(encodeURIComponent(e.photo)) + (token ? '?t=' + token : '') + '"></figure>').join("") + '</div></section>';
   }
 
   // R7: entries in another book currency are left out of every total; the report says so, in red, with the list
-  const uyumsuz = K.paraUyumsuz ? K.paraUyumsuz(items, set).filter(e => !months.length || months.includes((e.date || "").slice(0, 7))) : [];
+  const doneminMi = e => !months.length || months.includes((e.date || "").slice(0, 7));
+  const dislanan = K.dislananlar ? K.dislananlar(items, set).filter(x => doneminMi(x.e)) : [];   // F-22: each reason has its own words
+  const uyumsuz = K.dislananlar ? dislanan.filter(x => x.neden === "para").map(x => x.e) : (K.paraUyumsuz ? K.paraUyumsuz(items, set).filter(doneminMi) : []);
+  const digerDisi = dislanan.filter(x => x.neden !== "para").map(x => x.e);
+  const gecersizTutarli = (K.gecersizKayitlar ? K.gecersizKayitlar(items) : []).filter(doneminMi);
   if (uyumsuz.length) html = html.replace("</header>", "</header>" + '<div class="uyari" style="color:#b3261e;border:1px solid #b3261e;padding:2mm 3mm;margin:2mm 0">' +
     '<b>' + esc(t("Para birimi uyumsuz kayıtlar")) + '</b> · ' + esc(t("{n} kayıt başka bir para biriminde girilmiş (defter {para}); bu kayıtlar toplamlara katılmadı:", { n: uyumsuz.length, para: K.paraKodu() })) +
-    '<ul style="margin:1mm 0 0 4mm;padding:0">' + uyumsuz.map(e => '<li>' + dmy(e.date) + ' · ' + esc(e.vendor || e.desc || "") + ' · ' + esc(K.fx(e.amount, K.kayitParasi(e))) + '</li>').join("") + '</ul></div>');
+    '<ul style="margin:1mm 0 0 4mm;padding:0">' + uyumsuz.map(e => '<li>' + esc(dmy(e.date)) + ' · ' + esc(e.vendor || e.desc || "") + ' · ' + esc(K.fx(e.amount, K.kayitParasi(e))) + '</li>').join("") + '</ul></div>');
+  const uyariKutu = (baslik, metin, liste) => '<div class="uyari" style="color:#b3261e;border:1px solid #b3261e;padding:2mm 3mm;margin:2mm 0"><b>' + esc(baslik) + '</b> · ' + esc(metin) + '<ul style="margin:1mm 0 0 4mm;padding:0">' + liste.slice(0, 20).map(e => '<li>' + esc(dmy(e.date)) + ' · ' + esc(e.vendor || e.desc || "") + ' · ' + esc(K.tutarGecerli(e) ? K.fx(e.amount, K.kayitParasi(e)) : String(e.amount === undefined || e.amount === null ? "" : e.amount).slice(0, 24)) + '</li>').join("") + (liste.length > 20 ? '<li>…</li>' : "") + '</ul></div>';
+  { const ga = K.gecersizAcilis ? K.gecersizAcilis(set) : []; if (ga.length) html = html.replace("</header>", "</header>" + '<div class="uyari" style="color:#b3261e;border:1px solid #b3261e;padding:2mm 3mm;margin:2mm 0"><b>' + esc(t("Başlangıç tutarı geçersiz")) + '</b> · ' + esc(t("Başlangıç tutarı {sinir} sınırını aşıyor ya da okunamıyor; 0 sayıldı ({liste}). Ayarlar’dan düzeltin.", { sinir: new Intl.NumberFormat(K.lang === "tr" ? "tr-TR" : K.lang).format(K.TUTAR_USTSINIR), liste: ga.map(x => x.tur === "kasa" ? t("Başlangıç kasası") : x.ad).join(", ") })) + '</div>'); }
+  if (digerDisi.length) html = html.replace("</header>", "</header>" + uyariKutu(t("Toplam dışı kayıtlar"), t("{n} kayıt toplamlara katılmadı (sıfırlamadan önceki defterden geri gelmiş, geçersiz tarihli ya da toplam dışı bir kaydın iadesi):", { n: digerDisi.length }), digerDisi));
+  if (gecersizTutarli.length) html = html.replace("</header>", "</header>" + uyariKutu(t("Geçersiz tutar"), t("{n} kaydın tutarı geçersiz olduğu için bu raporda yok:", { n: gecersizTutarli.length }), gecersizTutarli));
   root.innerHTML = html;
-  document.title = (kons ? (sirketAd || t("Tüm tekneler")) + " · " + t("Konsolide rapor") : name + " · " + t("Kasa Raporu")) + " · " + span;
+  document.title = (kons ? (sirketAd || t("Tüm tekneler")) + " · " + t("Konsolide rapor") : name + " · " + t("Kasa Raporu")) + " · " + span + (ekList.length ? " (" + t("Fiş fotoğrafları") + ")" : "");   // Q-4: the PDF file name (print dialog) carries the same suffix as the other report names
   if (D.yazdir) window.addEventListener("load", () => setTimeout(() => window.print(), 400));
 })();

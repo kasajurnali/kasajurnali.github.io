@@ -1,0 +1,27 @@
+Yachting Jurnal - receipt reader (ocr.js): third-party files in this folder
+(shown in the program under Settings > About > "Receipt reader licences")
+
+- tesseract.min.js, worker.min.js: Tesseract.js 5.1.1, Apache-2.0 (LICENSE-tesseract.js.txt)
+- core/tesseract-core-simd-lstm.wasm.js: Tesseract.js-core 5.1.1 = the Tesseract OCR engine compiled to WebAssembly, Apache-2.0
+  (LICENSE-tesseract.js-core.txt). This build contains the Leptonica image library (see below) and may contain further small open-source
+  image libraries (for example zlib, libpng, libjpeg, libtiff), each under its own permissive licence (zlib / libpng / BSD style); their
+  copyright notices are those of their authors, see https://github.com/naptha/tesseract.js-core .
+- lang/tur.traineddata.gz, lang/eng.traineddata.gz: Tesseract "tessdata_best" models in integer form (4.0.0_best_int, from the npm package
+  @tesseract.js-data/*), Apache-2.0
+
+Leptonica (included in the core above)
+  Copyright (C) 2001 Leptonica. All rights reserved.
+  Redistribution and use in source and binary forms, with or without modification, are permitted provided that the following conditions
+  are met: 1. Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
+  2. Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the
+  documentation and/or other materials provided with the distribution.
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+  LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL ANY COPYRIGHT
+  HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+  LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+  THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Apache License 2.0 (Tesseract.js, Tesseract.js-core, Tesseract models): the full text is in LICENSE-tesseract.js.txt and
+LICENSE-tesseract.js-core.txt (same folder). The files are used as published and were not modified; nothing is loaded from the internet.
+The photo is read on the device and is never sent anywhere.

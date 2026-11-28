@@ -59,13 +59,14 @@
   // photos that must stay: every boat's entries and every boat's archive of deleted entries (silinenKayitlar,
   // id → { zaman, kim, kayit }); archived boats included. defterler: [book] or { id: book }
   function fotoKaynagi(defterler) {
-    const kayitlar = [], silinenKayitlar = {};
+    const kayitlar = [], silinenKayitlar = {}, korunanFoto = {};   // korunanFoto: the photos of a reset book, kept 400 days (para-secim.js); every boat's list, newest time per id
     for (const [i, df] of Object.entries(nesne(defterler))) {
       const d = nesne(df);
+      for (const [id, z] of Object.entries(nesne(nesne(d.ayarlar).korunanFoto))) if (!korunanFoto[id] || String(z) > korunanFoto[id]) korunanFoto[id] = String(z);
       if (Array.isArray(d.kayitlar)) kayitlar.push(...d.kayitlar);
       for (const [k, v] of Object.entries(nesne(d.silinenKayitlar))) silinenKayitlar[i + ":" + k] = v;
     }
-    return { kayitlar, silinenKayitlar };
+    return { kayitlar, silinenKayitlar, ayarlar: { korunanFoto } };   // ayarlar: the shape senk.js reads a single book's list from (K.korunanFotoIdler(D.ayarlar))
   }
   function fotoKimlikleri(defterler) {
     const D = fotoKaynagi(defterler), l = D.kayitlar.concat(Object.values(D.silinenKayitlar).map(x => nesne(nesne(x).kayit)));
@@ -77,7 +78,7 @@
     const ay = items.filter(e => (e.date || "").slice(0, 7) === ym);
     const ix = K.kayitIndeksi(items), oz = K.ozetFor(items, set, ym, ix), sp = K.paySplit(ay, set, ix);
     return { para: paraOf(set), kalan: K.kasaFor(items, set, "all").kalan, gelen: oz.gelir, gider: oz.gider, nakit: sp.nakit, kart: sp.kart, diger: sp.none,
-      fotosuz: ay.filter(e => K.isOut(e) && !e.photo).length, kayit: items.length };
+      fotosuz: ay.filter(e => K.isOut(e) && !e.photo).length, kayit: items.length, acilisUyari: K.gecersizAcilis ? K.gecersizAcilis(set).length : 0 };
   }
   // the company's figures: every boat, and totals for each currency (amounts in different currencies are never added up)
   function sirketOzeti(tekneler, ym) {
@@ -193,6 +194,8 @@
     h += '<div class="panel"><h3>' + esc(t("Tekneler · {ay}", { ay: K.monthLabel(F.ay) })) + '</h3><div class="tablo"><table class="sirkett"><thead><tr><th>' + esc(t("Tekne")) + '</th><th>' + esc(t("Kalan kasa")) + '</th><th>' + esc(t("Gelen para")) + '</th><th>' + esc(t("Toplam harcama")) + '</th><th>' + esc(t("Nakit")) + '</th><th>' + esc(t("Kart")) + '</th><th>' + esc(t("Banka ve diğer")) + '</th><th>' + esc(t("Fotoğrafsız")) + '</th></tr></thead><tbody>' +
       oz.satir.map(s => '<tr><td><button type="button" class="linkbtn" data-tksec="' + esc(s.id) + '">' + esc(s.ad) + '</button></td><td class="r' + (s.kalan < 0 ? " neg" : "") + '">' + para(s.kalan, s.para) + '</td><td class="r">' + para(s.gelen, s.para) + '</td><td class="r">' + para(s.gider, s.para) + '</td><td class="r">' + para(s.nakit, s.para) + '</td><td class="r">' + para(s.kart, s.para) + '</td><td class="r">' + para(s.diger, s.para) + '</td><td class="r">' + (s.fotosuz ? '<b>' + s.fotosuz + '</b>' : "0") + '</td></tr>').join("") +
       '</tbody></table></div>' + (oz.satir.some(s => s.fotosuz) ? '<p class="small">' + esc(t("Fotoğrafsız: bu ay fişi fotoğraflanmamış harcama sayısı.")) + '</p>' : "") + '</div>';
+    // CT-T8: a boat whose opening is above the ceiling or unreadable is counted as 0 here too: said once under the table (same text as the consolidated report)
+    { const ac = oz.satir.filter(s => s.acilisUyari); if (ac.length) h += '<div class="note err"><span><b>' + esc(t("Başlangıç tutarı geçersiz")) + '</b>' + esc(t("Başlangıç tutarı {sinir} sınırını aşıyor ya da okunamıyor; 0 sayıldı ({liste}). Ayarlar’dan düzeltin.", { sinir: new Intl.NumberFormat(K.lang === "tr" ? "tr-TR" : K.lang).format(K.TUTAR_USTSINIR), liste: ac.map(s => s.ad || s.id).join(", ") })) + '</span></div>'; }
     // comparison bars, scaled within each currency
     const cubuk = (baslik, alan) => {
       let b = '<div class="panel"><h3>' + esc(baslik) + '</h3><div class="tkbars">';

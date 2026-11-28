@@ -33,10 +33,16 @@
     return out;
   }
 
-  // inflate (raw deflate), used when the browser has no DecompressionStream (older iPhones)
-  function inflate(src) {
-    let pos = 0, bit = 0, out = new Uint8Array(src.length * 4 + 1024), op = 0;
-    const need = n => { if (op + n > out.length) { const o = new Uint8Array(Math.max(out.length * 2, op + n)); o.set(out); out = o; } };
+  // Limits of the reader (same as app/excel.go): a small file can claim a gigantic sheet (a zip bomb, or one cell "A99999999999").
+  // Excel's own sheet size, and a generous size for what is unpacked, far above any real ledger.
+  const MAKS_SATIR = 1048576, MAKS_SUTUN = 16384, OGE_SINIR = 64 << 20, TOPLAM_SINIR = 128 << 20, MAKS_YER = 4 << 20;
+  const BUYUK = "Excel dosyası beklenenden çok büyük açılıyor; okunmadı.";
+
+  // inflate (raw deflate), used when the browser has no DecompressionStream (older iPhones); never produces more than `sinir` bytes
+  function inflate(src, sinir) {
+    sinir = sinir || OGE_SINIR;
+    let pos = 0, bit = 0, out = new Uint8Array(Math.min(src.length * 4 + 1024, sinir + 1)), op = 0;
+    const need = n => { if (op + n > sinir) throw new Error(BUYUK); if (op + n > out.length) { const o = new Uint8Array(Math.min(Math.max(out.length * 2, op + n), sinir + 1)); o.set(out); out = o; } };
     const bits = n => { let v = 0; for (let i = 0; i < n; i++) { if (pos >= src.length) throw new Error("bozuk"); v |= ((src[pos] >> bit) & 1) << i; if (++bit === 8) { bit = 0; pos++; } } return v; };
     function tablo(len) { const cnt = new Uint16Array(16), offs = new Uint16Array(16), sym = new Uint16Array(len.length); for (const l of len) cnt[l]++; cnt[0] = 0; for (let i = 1; i < 16; i++) offs[i] = offs[i - 1] + cnt[i - 1]; for (let i = 0; i < len.length; i++) if (len[i]) sym[offs[len[i]]++] = i; return { cnt, sym }; }
     function coz(t) { let code = 0, first = 0, index = 0; for (let l = 1; l < 16; l++) { code |= bits(1); const c = t.cnt[l]; if (code - c < first) return t.sym[index + (code - first)]; index += c; first += c; first <<= 1; code <<= 1; } throw new Error("bozuk"); }
@@ -69,11 +75,26 @@
     }
     return out.subarray(0, op);
   }
-  async function ac(veri) {
+  async function ac(veri, sinir) {
+    sinir = sinir || OGE_SINIR;
     if (typeof DecompressionStream === "function") {
-      try { return new Uint8Array(await new Response(new Blob([veri]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer()); } catch (e) { }
+      let okuyucu = null;
+      try {   // read in pieces and stop at the limit: the whole result is never held when it is a bomb
+        okuyucu = new Blob([veri]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+        const parca = []; let n = 0;
+        for (;;) {
+          const { done, value } = await okuyucu.read();
+          if (done) break;
+          n += value.length;
+          if (n > sinir) { okuyucu.cancel().catch(() => { }); throw new Error(BUYUK); }
+          parca.push(value);
+        }
+        const out = new Uint8Array(n); let p = 0;
+        for (const x of parca) { out.set(x, p); p += x.length; }
+        return out;
+      } catch (e) { if (e && e.message === BUYUK) throw e; }
     }
-    return inflate(veri);
+    return inflate(veri, sinir);
   }
   async function zipOku(buf) {
     const b = new Uint8Array(buf), v = new DataView(b.buffer, b.byteOffset, b.byteLength);
@@ -83,21 +104,26 @@
     const dosyalar = {};
     for (let k = 0; k < n; k++) {
       if (v.getUint32(p, true) !== 0x02014b50) throw new Error("zip");
-      const yontem = v.getUint16(p + 10, true), boy = v.getUint32(p + 20, true), al = v.getUint16(p + 28, true), xl = v.getUint16(p + 30, true), cl = v.getUint16(p + 32, true), lo = v.getUint32(p + 42, true);
+      const yontem = v.getUint16(p + 10, true), boy = v.getUint32(p + 20, true), acik = v.getUint32(p + 24, true), al = v.getUint16(p + 28, true), xl = v.getUint16(p + 30, true), cl = v.getUint16(p + 32, true), lo = v.getUint32(p + 42, true);
       const ad = new TextDecoder().decode(b.subarray(p + 46, p + 46 + al));
-      dosyalar[ad.toLowerCase()] = { yontem, boy, lo };
+      dosyalar[ad.toLowerCase()] = { yontem, boy, acik, lo };
       p += 46 + al + xl + cl;
     }
+    let kalan = TOPLAM_SINIR;   // all parts together
     return async ad => {
       const f = dosyalar[ad.replace(/^\//, "").toLowerCase()]; if (!f) return null;
+      const sinir = Math.min(OGE_SINIR, kalan);
+      if (f.acik > sinir) throw new Error(BUYUK);   // the declared size; the unpacking below enforces the limit even if it lies
       const s = f.lo + 30 + v.getUint16(f.lo + 26, true) + v.getUint16(f.lo + 28, true), ham = b.subarray(s, s + f.boy);
-      const veri = f.yontem === 0 ? ham : f.yontem === 8 ? await ac(ham) : null;
+      const veri = f.yontem === 0 ? ham : f.yontem === 8 ? await ac(ham, sinir) : null;
+      if (veri && veri.length > sinir) throw new Error(BUYUK);
+      if (veri) kalan -= veri.length;
       return veri ? new TextDecoder().decode(veri) : null;
     };
   }
 
   /* ---------------- writing (same layout and styles as the computer program) ---------------- */
-  const STIL = { "": 0, kalin: 1, para: 2, tarih: 3, basliksatir: 4, parakalin: 5, baslik: 6, etiket: 7, metin: 8, donem: 9, kalinzemin: 10, paragelen: 11, kalan: 12, basliksatirsag: 13, sayi: 14, sayikalin: 15 };
+  const STIL = { "": 0, kalin: 1, para: 2, tarih: 3, basliksatir: 4, parakalin: 5, baslik: 6, etiket: 7, metin: 8, donem: 9, kalinzemin: 10, paragelen: 11, kalan: 12, basliksatirsag: 13, sayi: 14, sayikalin: 15, fistarih: 16, fispara: 17 };
   const kac = s => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
   // the service worker has no hesap.js: the symbols of PARA_TABLO (hesap.js) here too
   const SEMBOL = { EUR: { sym: "€", ond: 2 }, USD: { sym: "$", ond: 2 }, GBP: { sym: "£", ond: 2 }, TRY: { sym: "₺", ond: 2 }, CHF: { sym: "CHF", ond: 2 }, AUD: { sym: "A$", ond: 2 }, AED: { sym: "AED", ond: 2 } };
@@ -118,17 +144,19 @@
       '<fonts count="7">\n<font><sz val="10"/><name val="Calibri"/><family val="2"/></font>\n<font><b/><sz val="10"/><name val="Calibri"/><family val="2"/></font>\n<font><b/><sz val="10"/><color rgb="FFFFFFFF"/><name val="Calibri"/><family val="2"/></font>\n<font><b/><sz val="16"/><color rgb="FF0E2740"/><name val="Calibri"/><family val="2"/></font>\n<font><sz val="9"/><color rgb="FF5A6B7A"/><name val="Calibri"/><family val="2"/></font>\n<font><sz val="10"/><color rgb="FF1E7349"/><name val="Calibri"/><family val="2"/></font>\n<font><b/><sz val="12"/><color rgb="FF0E2740"/><name val="Calibri"/><family val="2"/></font>\n</fonts>\n' +
       '<fills count="5">\n<fill><patternFill patternType="none"/></fill>\n<fill><patternFill patternType="gray125"/></fill>\n<fill><patternFill patternType="solid"><fgColor rgb="FF0E2740"/><bgColor indexed="64"/></patternFill></fill>\n<fill><patternFill patternType="solid"><fgColor rgb="FFEDF1F4"/><bgColor indexed="64"/></patternFill></fill>\n<fill><patternFill patternType="solid"><fgColor rgb="FFF3E7D1"/><bgColor indexed="64"/></patternFill></fill>\n</fills>\n' +
       '<borders count="3">\n<border><left/><right/><top/><bottom/><diagonal/></border>\n<border><left/><right/><top/><bottom style="thin"><color rgb="FFD3DCE3"/></bottom><diagonal/></border>\n<border><left/><right/><top style="medium"><color rgb="FF0E2740"/></top><bottom style="thin"><color rgb="FFD3DCE3"/></bottom><diagonal/></border>\n</borders>\n' +
-      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>\n<cellXfs count="16">\n' +
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>\n<cellXfs count="18">\n' +
       '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>\n<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/>\n<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>\n<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left"/></xf>\n<xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center"/></xf>\n<xf numFmtId="164" fontId="1" fillId="3" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>\n<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1"/>\n<xf numFmtId="0" fontId="4" fillId="0" borderId="0" xfId="0" applyFont="1"/>\n<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>\n<xf numFmtId="166" fontId="6" fillId="0" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyAlignment="1"><alignment horizontal="left"/></xf>\n<xf numFmtId="0" fontId="1" fillId="3" borderId="2" xfId="0" applyFont="1" applyFill="1" applyBorder="1"/>\n<xf numFmtId="164" fontId="5" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyFont="1" applyBorder="1"/>\n<xf numFmtId="164" fontId="6" fillId="4" borderId="0" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1"/>\n<xf numFmtId="0" fontId="2" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment horizontal="right" vertical="center"/></xf>\n<xf numFmtId="4" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1"/>\n<xf numFmtId="4" fontId="1" fillId="3" borderId="2" xfId="0" applyNumberFormat="1" applyFont="1" applyFill="1" applyBorder="1"/>\n' +
-      '</cellXfs>\n<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>\n</styleSheet>';
+      '<xf numFmtId="165" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment horizontal="left" vertical="top"/></xf>\n<xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf>\n</cellXfs>\n<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>\n</styleSheet>';
   }
   function konum(ref) {
     const m = /^([A-Z]+)(\d+)$/.exec(ref || ""); if (!m || +m[2] < 1) throw new Error("geçersiz hücre: " + ref);
-    let c = 0; for (const ch of m[1]) c = c * 26 + ch.charCodeAt(0) - 64;
+    let c = 0; for (const ch of m[1]) { c = c * 26 + ch.charCodeAt(0) - 64; if (c > MAKS_SUTUN) throw new Error("geçersiz hücre: " + ref); }
+    if (+m[2] > MAKS_SATIR) throw new Error("geçersiz hücre: " + ref);
     return [c - 1, +m[2]];
   }
   const sayi = v => { if (!isFinite(v)) throw new Error("geçersiz sayı"); return String(v); };
-  function sayfaXML(s) {
+  function sayfaXML(s, cizim) {
+    const yuk = new Map(); for (const x of s.satirYuk || []) if (x && x.satir >= 1 && x.pt > 0 && x.pt <= 409) yuk.set(+x.satir, +x.pt);
     const satir = new Map();
     for (const h of s.hucreler || []) { const [c, r] = konum(h.r); if (!satir.has(r)) satir.set(r, []); satir.get(r).push([c, h]); }
     let b = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" showGridLines="0">';
@@ -137,7 +165,7 @@
     if ((s.sutunlar || []).length) b += "<cols>" + s.sutunlar.map((w, i) => '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + w + '" customWidth="1"' + (w > 0 ? "" : ' hidden="1"') + '/>').join("") + "</cols>";
     b += "<sheetData>";
     for (const r of [...satir.keys()].sort((x, y) => x - y)) {
-      b += '<row r="' + r + '">';
+      b += '<row r="' + r + '"' + (yuk.has(r) ? ' ht="' + yuk.get(r).toFixed(2) + '" customHeight="1"' : "") + ">";
       for (const [, h] of satir.get(r).sort((x, y) => x[0] - y[0])) {
         const st = STIL[h.st || ""] || 0, sa = st ? ' s="' + st + '"' : "", f = h.f ? "<f>" + kac(h.f) + "</f>" : "";
         if (typeof h.v === "number") b += '<c r="' + h.r + '"' + sa + ">" + f + "<v>" + sayi(h.v) + "</v></c>";
@@ -149,7 +177,41 @@
     }
     b += "</sheetData>";
     if ((s.birlesik || []).length) b += '<mergeCells count="' + s.birlesik.length + '">' + s.birlesik.map(m => '<mergeCell ref="' + kac(m) + '"/>').join("") + "</mergeCells>";
-    return b + '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/></worksheet>';
+    return b + '<pageMargins left="0.5" right="0.5" top="0.6" bottom="0.6" header="0.3" footer="0.3"/><pageSetup paperSize="9" orientation="portrait" fitToWidth="1" fitToHeight="0"/>' + (cizim ? '<drawing r:id="rId1"/>' : "") + "</worksheet>";
+  }
+  // Receipt pictures (rapor-fis.js "Fişler" sheet): s.resimler = [{ r: "F5", veri: Uint8Array (JPEG), gen, yuk (pixels shown) }]; the window fills
+  // veri / gen / yuk from the photos it keeps (yerel.js). A picture without veri is left out.
+  function jpegBoyut(u) {   // [width, height] of a JPEG, from its first frame header; null when it is not one
+    if (!u || u.length < 4 || u[0] !== 0xFF || u[1] !== 0xD8) return null;
+    for (let i = 2; i + 9 < u.length;) {
+      if (u[i] !== 0xFF) { i++; continue; }
+      const m = u[i + 1]; if (m === 0xFF) { i++; continue; }
+      if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) return [(u[i + 7] << 8) | u[i + 8], (u[i + 5] << 8) | u[i + 6]];
+      if (m === 0xD8 || (m >= 0xD0 && m <= 0xD7) || m === 0x01) { i += 2; continue; }
+      i += 2 + ((u[i + 2] << 8) | u[i + 3]);
+    }
+    return null;
+  }
+  function cizimYap(s, n, ct) {   // → { parcalar: [[name, Uint8Array|string]], rels } for one sheet, or null
+    const l = (s.resimler || []).filter(x => x && x.veri && x.veri.length && /^[A-Z]{1,3}[1-9]\d{0,6}$/.test(x.r || ""));
+    if (!l.length) return null;
+    let cz = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">';
+    let rl = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+    const parcalar = [];
+    l.forEach((x, i) => {
+      const no = i + 1, [c, r] = konum(x.r), bo = jpegBoyut(x.veri) || [x.gen || 1, x.yuk || 1];
+      const kg = Math.min(1200, Math.max(20, +x.kutuGen || 220)), ky = Math.min(1200, Math.max(20, +x.kutuYuk || 180));
+      let gen = x.gen || kg, yuk = x.yuk || gen * bo[1] / bo[0];
+      if (!x.gen) { gen = kg; yuk = kg * bo[1] / bo[0]; if (yuk > ky) { yuk = ky; gen = ky * bo[0] / bo[1]; } }
+      const cx = Math.round(gen * 9525), cy = Math.round(yuk * 9525);
+      parcalar.push(["xl/media/image" + n + "_" + no + ".jpg", x.veri]);
+      rl += '<Relationship Id="rId' + no + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/image' + n + "_" + no + '.jpg"/>';
+      cz += '<xdr:oneCellAnchor><xdr:from><xdr:col>' + (c - 1) + '</xdr:col><xdr:colOff>38100</xdr:colOff><xdr:row>' + (r - 1) + '</xdr:row><xdr:rowOff>38100</xdr:rowOff></xdr:from><xdr:ext cx="' + cx + '" cy="' + cy + '"/><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="' + (no + 1) + '" name="Fis ' + no + '" descr="Fis ' + no + '"/><xdr:cNvPicPr><a:picLocks noChangeAspect="1"/></xdr:cNvPicPr></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId' + no + '"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:oneCellAnchor>';
+    });
+    parcalar.push(["xl/drawings/drawing" + n + ".xml", cz + "</xdr:wsDr>"], ["xl/drawings/_rels/drawing" + n + ".xml.rels", rl + "</Relationships>"],
+      ["xl/worksheets/_rels/sheet" + n + ".xml.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing' + n + '.xml"/></Relationships>']);
+    ct.k += '<Override PartName="/xl/drawings/drawing' + n + '.xml" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>';
+    return parcalar;
   }
   function sayfaAdi(s, kullanilan) {
     s = String(s || "").replace(/[\[\]:*?\/\\]/g, "-"); s = [...s].slice(0, 31).join("") || "Sayfa";
@@ -160,25 +222,27 @@
   const isaretXML = dil => "<cp:keywords>kj-xlsx=1</cp:keywords><dc:language>" + (/^[a-z]{2,3}$/.test(dil || "") ? dil : "tr") + "</dc:language>";
   function yaz(sayfalar, dil, para) {
     if (!sayfalar || !sayfalar.length) throw new Error("Excel sayfası yok");
-    const P = [], kul = new Set();
+    const P = [], kul = new Set(), IK = [], cts = { k: "" };
     let ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>';
     let wb = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView/></bookViews><sheets>';
     let rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
     sayfalar.forEach((s, i) => {
       const n = i + 1;
-      P.push(["xl/worksheets/sheet" + n + ".xml", sayfaXML(s)]);
+      const cz = cizimYap(s, n, cts);
+      if (cz) for (const x of cz) IK.push(x);
+      P.push(["xl/worksheets/sheet" + n + ".xml", sayfaXML(s, !!cz)]);
       ct += '<Override PartName="/xl/worksheets/sheet' + n + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
       wb += '<sheet name="' + kac(sayfaAdi(s.ad, kul)) + '" sheetId="' + n + '" r:id="rId' + n + '"/>';
       rels += '<Relationship Id="rId' + n + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + n + '.xml"/>';
     });
-    ct += "</Types>"; wb += '</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>';
+    ct += cts.k + "</Types>"; if (IK.length) ct = ct.replace('<Default Extension="rels"', '<Default Extension="jpg" ContentType="image/jpeg"/><Default Extension="rels"'); wb += '</sheets><calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>';
     rels += '<Relationship Id="rId' + (sayfalar.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
     const hepsi = [["[Content_Types].xml", ct], ...P,
       ["_rels/.rels", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/><Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>'],
       ["docProps/core.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>Yachting Jurnal</dc:title><dc:creator>Yachting Jurnal</dc:creator>' + isaretXML(dil) + '</cp:coreProperties>'],
       ["docProps/app.xml", '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties"><Application>Yachting Jurnal</Application></Properties>'],
       ["xl/workbook.xml", wb], ["xl/_rels/workbook.xml.rels", rels], ["xl/styles.xml", stiller(dil, para)]];
-    return zipYaz(hepsi.map(([a, s]) => [a, utf8(s)]));
+    return zipYaz(hepsi.map(([a, s]) => [a, utf8(s)]).concat(IK.map(([a, v]) => [a, typeof v === "string" ? utf8(v) : v])));
   }
 
   /* ---------------- reading: every sheet as rows of raw values (dates stay Excel serial numbers) ---------------- */
@@ -188,7 +252,16 @@
   const metinler = x => { let s = ""; x.replace(/<(?:\w+:)?rPh\b[\s\S]*?<\/(?:\w+:)?rPh>/g, "").replace(/<(?:\w+:)?t(?:\s[^>]*)?>([\s\S]*?)<\/(?:\w+:)?t>/g, (m, t) => { s += coz(t); return m; }); return s; };
   function sayfaOku(x, paylasilan) {
     const satirlar = [];
-    const koy = (r, c, v) => { while (satirlar.length < r) satirlar.push([]); const row = satirlar[r - 1]; while (row.length <= c) row.push(null); row[c] = v; };
+    let yer = 0;   // places taken up so far (cells and the gaps before them), against MAKS_YER
+    const koy = (r, c, v) => {
+      if (!(r >= 1 && r <= MAKS_SATIR && c >= 0 && c < MAKS_SUTUN)) return;   // outside the sheet Excel itself allows: not a real cell
+      if (satirlar.length < r) yer += r - satirlar.length;
+      const mevcut = satirlar[r - 1] ? satirlar[r - 1].length : 0;
+      if (mevcut <= c) yer += c + 1 - mevcut;
+      if (yer > MAKS_YER) throw new Error(BUYUK);
+      while (satirlar.length < r) satirlar.push([]);
+      const row = satirlar[r - 1]; while (row.length <= c) row.push(null); row[c] = v;
+    };
     let sonSatir = 0;
     const rowRe = /<(?:\w+:)?row\b([^>]*?)(\/>|>([\s\S]*?)<\/(?:\w+:)?row>)/g; let rm;
     while ((rm = rowRe.exec(x))) {
@@ -206,7 +279,7 @@
         else if (tur === "inlineStr") { const im = /<(?:\w+:)?is>([\s\S]*?)<\/(?:\w+:)?is>/.exec(ic); v = im ? metinler(im[1]) : ""; }
         else if (tur === "str" || tur === "e") v = ham;
         else if (tur === "b") v = ham === "1";
-        else if (ham !== "") { const f = Number(ham.trim()); v = isNaN(f) ? ham : f; }
+        else if (ham !== "") { const f = Number(ham.trim()); v = isFinite(f) ? f : ham; }   // "Infinity"/"NaN" are text, never a number (as app/excel.go)
         if (v !== null && r > 0) koy(r, c, v);
       }
     }
@@ -221,15 +294,16 @@
     if (!wb) throw new Error("Excel dosyası okunamadı (çalışma kitabı yok).");
     const hedef = {}, rels = await al("xl/_rels/workbook.xml.rels");
     if (rels) rels.replace(/<(?:\w+:)?Relationship\b([^>]*?)\/?>/g, (m, a) => { const id = ozellik(a, "Id"), t = ozellik(a, "Target"); if (id && t) hedef[id] = t.startsWith("/") ? t.slice(1) : "xl/" + t.replace(/^\.\//, ""); return m; });
-    const kitap = { SheetNames: [], Sheets: {}, Dil: "", Atlanan: [] }; let i = 0;
-    const core = await al("docProps/core.xml").catch(() => null);
+    const kitap = { SheetNames: [], Sheets: {}, Dil: "", Atlanan: [], Tarih1904: /<(?:\w+:)?workbookPr\b[^>]*\bdate1904\s*=\s*"(?:1|true)"/.test(wb) }; let i = 0;   // Tarih1904: dates counted from 1904 (Excel for Mac): serial numbers are 1462 smaller
+    const yut = e => { if (e && e.message === BUYUK) throw e; return null; };   // too big: stops the whole reading; any other problem: the part is skipped
+    const core = await al("docProps/core.xml").catch(yut);
     if (core && /<(?:\w+:)?keywords>[^<]*kj-xlsx=1[^<]*<\/(?:\w+:)?keywords>/.test(core)) { const lm = /<(?:\w+:)?language>\s*([A-Za-z-]{2,8})\s*<\/(?:\w+:)?language>/.exec(core); kitap.Dil = lm ? lm[1].toLowerCase() : "tr"; }
     const shRe = /<(?:\w+:)?sheet\b([^>]*?)\/?>/g; let sm;
     while ((sm = shRe.exec(wb))) {
       i++;
       const ad = ozellik(sm[1], "name"), rid = ozellik(sm[1], "id");
       if (ad == null) continue;
-      const x = await al(hedef[rid] || ("xl/worksheets/sheet" + i + ".xml")).catch(() => null);
+      const x = await al(hedef[rid] || ("xl/worksheets/sheet" + i + ".xml")).catch(yut);
       if (!x) { kitap.Atlanan.push(ad); continue; }
       kitap.SheetNames.push(ad); kitap.Sheets[ad] = sayfaOku(x, paylasilan);
     }
@@ -237,5 +311,5 @@
     return kitap;
   }
 
-  g.KJ_XLSX = { yaz, oku, zipYaz, crc32, inflate };
+  g.KJ_XLSX = { yaz, oku, zipYaz, crc32, inflate, jpegBoyut };
 })(typeof self !== "undefined" ? self : globalThis);

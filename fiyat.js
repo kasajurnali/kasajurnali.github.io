@@ -54,7 +54,7 @@
   // tax line: with TL (Turkey) "VAT included"; with euro Paddle shows the tax on the payment screen
   const VERGI = {
     TRY: {
-      tr: "Fiyatlara KDV dahildir.", en: "Prices include VAT.", fr: "Les prix incluent la TVA.", it: "I prezzi includono l’IVA.",
+      tr: "Fiyatlara KDV dâhildir.", en: "Prices include VAT.", fr: "Les prix incluent la TVA.", it: "I prezzi includono l’IVA.",
       es: "Los precios incluyen el IVA.", de: "Die Preise enthalten die Mehrwertsteuer.", el: "Οι τιμές περιλαμβάνουν ΦΠΑ."
     },
     EUR: {
@@ -68,7 +68,7 @@
   const M = {
     ucretsiz: { tr: "Ücretsiz", en: "Free", fr: "Gratuit", it: "Gratuito", es: "Gratis", de: "Kostenlos", el: "Δωρεάν" },
     f1: { tr: "Tek tekne", en: "One boat", fr: "Un seul bateau", it: "Una sola barca", es: "Un solo barco", de: "Ein Boot", el: "Ένα σκάφος" },
-    f2: { tr: "Kasa defteri, gelir ve gider (kısıtlı)", en: "Cash book, income and expenses (limited)", fr: "Livre de caisse, recettes et dépenses (limité)", it: "Libro cassa, entrate e spese (limitato)", es: "Libro de caja, ingresos y gastos (limitado)", de: "Kassenbuch, Einnahmen und Ausgaben (eingeschränkt)", el: "Βιβλίο ταμείου, έσοδα και έξοδα (περιορισμένο)" },
+    f2: { tr: "Kasa defteri, harcama ve gelen para (kısıtlı)", en: "Cash book, expenses and money in (limited)", fr: "Livre de caisse, dépenses et encaissements (limité)", it: "Libro cassa, spese ed entrate (limitato)", es: "Libro de caja, gastos e ingresos (limitado)", de: "Kassenbuch, Ausgaben und Einnahmen (eingeschränkt)", el: "Βιβλίο ταμείου, δαπάνες και εισπράξεις (περιορισμένο)" },
     aylik: { tr: "Aylık al", en: "Monthly", fr: "Mensuel", it: "Mensile", es: "Mensual", de: "Monatlich", el: "Μηνιαία" },
     yillik: { tr: "Yıllık al", en: "Yearly", fr: "Annuel", it: "Annuale", es: "Anual", de: "Jährlich", el: "Ετήσια" },
     yakinda: { tr: "Yakında", en: "Coming soon", fr: "Bientôt disponible", it: "Prossimamente", es: "Próximamente", de: "Demnächst", el: "Σύντομα" },

@@ -53,7 +53,7 @@
     return L.yonetici || L.deneme ? "fleet" : paketKodu((L.abonelik || {}).paket);
   }
 
-  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"'`]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "`": "&#96;" }[c]));
   // kilitli özellik penceresi: Kapat (#closeSheet) ve Hesabım (data-menu) düğmelerini app.js zaten tanır
   function kilitPenceresi(ad, baslik) {
     const host = g.document && g.document.getElementById("sheetHost");
@@ -74,5 +74,5 @@
     return false;
   }
 
-  Object.assign(KJ, { PAKETLER, PAKET_AD: ADLAR, paketAdi: x => ADLAR[paketKodu(x)] || String(x || ""), PAKET_HAKLARI: HAKLAR, paketKodu, ozellikPaketi, ozellik, ozellikIste, paket, paketHaklari: haklar });
+  Object.assign(KJ, { PAKETLER, PAKET_AD: ADLAR, paketAdi: x => { const k = paketKodu(x); return k === "ucretsiz" && KJ.lang === "tr" ? "Ücretsiz" : ADLAR[k] || String(x || ""); }, PAKET_HAKLARI: HAKLAR, paketKodu, ozellikPaketi, ozellik, ozellikIste, paket, paketHaklari: haklar });
 })(typeof window !== "undefined" ? window : globalThis);

@@ -94,7 +94,7 @@
     ["AUD", "A$", 2, "Avustralya doları", "Australian dollar"],
     ["AED", "AED", 2, "BAE dirhemi", "UAE dirham"]
   ];
-  const CUR = {};
+  const CUR = Object.create(null);   // no prototype: "constructor" and "__proto__" are not currencies (CT-33)
   PARA_TABLO.forEach(([kod, sym, ond, tr, en]) => { CUR[kod] = { sym, ond, ad: { tr, en } }; });
   const PARALAR = PARA_TABLO.map(x => x[0]);
   let PARA = "TRY";
@@ -104,15 +104,21 @@
   const nfFor = d => d === 2 ? NF : (NFD[LANG + d] = NFD[LANG + d] || new Intl.NumberFormat(LOC[LANG] || LANG, { minimumFractionDigits: d, maximumFractionDigits: d }));
   function setPara(k) { PARA = CUR[k] ? k : "TRY"; KJ.para = PARA; return PARA; }
   const paraKodu = () => PARA;
-  const paraSym = c => { c = c || PARA; return CUR[c] ? CUR[c].sym : c; };
+  // A currency code that comes from data (an entry's `para` / `cur`, a book's `para`, a backup file) is never written out as it is: only
+  // three letters (shown in capitals) are; anything else becomes the neutral sign ¤. This keeps markup in a damaged or forged backup
+  // out of every screen (GT-1). Supported currencies are looked up in CUR first and keep their own symbol.
+  const paraGuvenli = c => typeof c === "string" && /^[A-Za-z]{3}$/.test(c) ? c.toUpperCase() : "¤";
+  const paraSym = c => { c = c || PARA; return CUR[c] ? CUR[c].sym : paraGuvenli(c); };
   function curName(c) {
     if (!c) return "";
     if (CUR[c] && CUR[c].ad[LANG]) return CUR[c].ad[LANG];
-    try { return new Intl.DisplayNames([LOC[LANG] || LANG], { type: "currency" }).of(c) || c; } catch (e) { return c; }
+    const g = paraGuvenli(c);
+    if (g === "¤") return g;
+    try { return new Intl.DisplayNames([LOC[LANG] || LANG], { type: "currency" }).of(g) || g; } catch (e) { return g; }
   }
   // 1.234,50 € · €1,234.50 · 1.234,50 CHF · CHF 1,234.50 (a symbol made of letters is set apart by a space)
   function fx(v, c) {
-    const d = ondOf(c), x = rd(v, d), s = CUR[c] ? CUR[c].sym : (c || ""), n = nfFor(d).format(Math.abs(x));
+    const d = ondOf(c), x = rd(v, d), s = CUR[c] ? CUR[c].sym : (c ? paraGuvenli(c) : ""), n = nfFor(d).format(Math.abs(x));
     if (LANG === "en") return (x < 0 ? "-" : "") + s + (/[A-Za-z]$/.test(s) ? " " : "") + n;
     return (x < 0 ? "-" : "") + n + (s ? " " + s : "");
   }
@@ -129,9 +135,11 @@
   const monthLabel = ym => monthName(+ym.slice(5, 7)) + " " + ym.slice(0, 4);
   const shortMon = ym => AY_KISA ? AY_KISA[+ym.slice(5, 7) - 1] : monthName(+ym.slice(5, 7)).slice(0, 3);
   const addMonth = (ym, n) => { let y = +ym.slice(0, 4), m = +ym.slice(5, 7) + n; while (m < 1) { m += 12; y--; } while (m > 12) { m -= 12; y++; } return y + "-" + pad(m); };
-  const dmy = iso => iso ? iso.slice(0, 10).split("-").reverse().join(LANG === "tr" || LANG === "de" ? "." : "/") : "—";
+  // only an ISO date (YYYY-MM-DD…) is turned into day.month.year; anything else (empty, markup, a forged date) is "—" (CT-30)
+  const dmy = iso => typeof iso === "string" && /^\d{4}-\d{2}-\d{2}/.test(iso) ? iso.slice(0, 10).split("-").reverse().join(LANG === "tr" || LANG === "de" ? "." : "/") : "—";
   const dateTime = d => { if (!(d instanceof Date) || isNaN(d)) return ""; return dmy(d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate())) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); };
-  const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // & < > " ' and the back-tick are escaped; every attribute value the screens write is in quotes (so "=" and spaces need no escape)
+  const esc = s => String(s ?? "").replace(/[&<>"'`]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;", "`": "&#96;" }[c]));
   const lower = x => String(x ?? "").toLocaleLowerCase(LOC[LANG]).trim();
 
   /* ---------------- cash book rules ----------------
@@ -148,7 +156,14 @@
   const tk = c => r2(c / 100);                           // kuruş → amount
   // an amount the rules can count: a number (or numeric text) that is not negative. A negative or broken amount
   // (a damaged file, a hand-edited backup, another device) is left out of every total and reported, never deleted.
-  const tutarGecerli = e => { const v = e ? e.amount : null, a = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN; return isFinite(a) && a >= 0; };
+  // F-5: ceiling 1e11 (a hundred billion; as kuruş 1e13, far inside the safe integer range), numeric text only as digits and a decimal point
+  // ("12.5", also "1e3" when counting: as a whole book in app/veri.go and yerel.js; not "0x10", "12,5"). An amount above it is left out of the totals and reported.
+  const TUTAR_USTSINIR = 1e11, TUTAR_METNI = /^\s*\d+(\.\d+)?([eE][+-]?\d+)?\s*$/;   // counting reads the same wide text form as a whole book in Go and yerel.js (CT-K5); a single entry typed or imported takes the strict form (digits and a point) there
+  const tutarGecerli = e => { const v = e ? e.amount : null, a = typeof v === "number" ? v : typeof v === "string" && TUTAR_METNI.test(v) ? Number(v) : NaN; return isFinite(a) && a >= 0 && a <= TUTAR_USTSINIR; };
+  // F-19/K-2: the same ceiling for an opening cash / account opening balance (either sign). An opening above it (or not a number) counts as 0 in every
+  // balance and is reported (gecersizAcilis), never turned into null/Infinity; a book that carries one is not rewritten.
+  const acilisGecerli = v => { if (v === null || v === undefined || v === "") return true; const x = typeof v === "number" ? v : typeof v === "string" && TUTAR_METNI.test(v.replace(/^\s*-/, "")) ? Number(v) : NaN; return Number.isFinite(x) && Math.abs(x) <= TUTAR_USTSINIR; };
+  const acilisKr = v => acilisGecerli(v) ? kr(v) : 0;
   const gecersizKayitlar = items => (Array.isArray(items) ? items : []).filter(e => e && !tutarGecerli(e));
   const HESAP_TURLERI = ["nakit", "banka", "kart", "avans", "diger"];
   const VARSAYILAN_HESAPLAR = [
@@ -187,11 +202,13 @@
     return isOut(e) ? -a : a;
   }
   // totals of a list: in = money coming in, out = expenses less refunds (transfers are neither)
-  function sums(list) { let i = 0, o = 0; list.forEach(e => { if (!hesabaGirer(e)) return; const a = kr(e.amount); if (isIn(e)) i += a; else if (isIade(e)) o -= a; else if (isOut(e)) o += a; }); return { in: tk(i), out: tk(o) }; }
+  function sums(list, idx) { let i = 0, o = 0; idx = idx || kayitIndeksi(list); list.forEach(e => { if (!hesabaGirer(e, undefined, idx)) return; const a = kr(e.amount); if (isIn(e)) i += a; else if (isIade(e)) o -= a; else if (isOut(e)) o += a; }); return { in: tk(i), out: tk(o) }; }
   const cmpEntry = (a, b) => (a.date || "").localeCompare(b.date || "") || (a.createdAt || "").localeCompare(b.createdAt || "") || (a.ord || 0) - (b.ord || 0);
 
   // opening balance of an account: the cash box keeps the book's opening; others their own
-  const acilisOf = (set, h) => h.id === "nakit" ? kr(set.opening) : kr(h.acilis);
+  const acilisOf = (set, h) => h.id === "nakit" ? acilisKr(set.opening) : acilisKr(h.acilis);
+  // the openings of a book that are above the ceiling (or unreadable): [{ ad, tur: "kasa" | "hesap" }] (listed on the screen; they count as 0)
+  const gecersizAcilis = set => { set = set || {}; const l = []; if (!acilisGecerli(set.opening)) l.push({ ad: "", tur: "kasa" }); hesaplar(set).forEach(h => { if (h.id !== "nakit" && !acilisGecerli(h.acilis)) l.push({ ad: String(h.ad || h.id), tur: "hesap" }); }); return l; };
   /* "Eski kural" (3.0.1): the 2.5.0 cash rule — remaining = opening + money in − ALL expenses (cash and card) + refunds.
      The account rule (a card expense does not touch the cash box) applies only when the book says so.
      The decision comes from ONE setting, set.hesapKurali ("eski" | "yeni"), never from the entries: an import, a sync from an
@@ -205,10 +222,11 @@
     return !(Array.isArray(items) ? items : []).some(e => e && (isTr(e) || (e.hesap && e.hesap !== "nakit")));
   }
   // the 2.5.0 cash box over a period: in = money in, out = expenses less refunds (kuruş integers inside)
-  function eskiKasa(items, set, p) {
-    let devir = kr(set.opening), gir = 0, cik = 0;
+  function eskiKasa(items, set, p, idx) {
+    idx = idx || kayitIndeksi(items);
+    let devir = acilisKr(set.opening), gir = 0, cik = 0;
     items.forEach(e => {
-      if (!e || isTr(e) || !hesabaGirer(e, set)) return;
+      if (!e || isTr(e) || !hesabaGirer(e, set, idx)) return;
       const a = kr(e.amount), ay = (e.date || "").slice(0, 7), x = isIn(e) ? a : isIade(e) ? a : -a;   // + into the box, − out of it
       if (p !== "all" && ay < p) { devir += x; return; }
       if (p !== "all" && ay !== p) return;
@@ -228,27 +246,28 @@
   // how many entries are read differently (receipts paid by card without an account, money in by transfer/EFT without one)
   function kuralEtkisi(items, set) {
     items = Array.isArray(items) ? items : []; set = set || {};
+    const ix = kayitIndeksi(items), hg = e => hesabaGirer(e, set, ix);
     const E = Object.assign({}, set, { hesapKurali: "eski" }), Y = Object.assign({}, set, { hesapKurali: "yeni" });
     const kapali = (set.closed || []).filter(ayMi).slice().sort().map(ay => ({ ay, eski: kasaFor(items, E, ay).kalan, yeni: kasaFor(items, Y, ay).kalan })).filter(x => x.eski !== x.yeni);
     return {
       eski: kasaFor(items, E, "all").kalan, yeni: kasaFor(items, Y, "all").kalan, kapali,
-      kart: items.filter(e => isOut(e) && !e.hesap && e.pay === "kart" && hesabaGirer(e, set)).length,
-      havale: items.filter(e => isIn(e) && !e.hesap && (e.pay === "havale" || e.pay === "eft") && hesabaGirer(e, set)).length,
+      kart: items.filter(e => isOut(e) && !e.hesap && e.pay === "kart" && hg(e)).length,
+      havale: items.filter(e => isIn(e) && !e.hesap && (e.pay === "havale" || e.pay === "eft") && hg(e)).length,
       // money in without an account (any way of paying, "nakit" too): the account rule reads it as paid into the cash box
-      gelen: (g => ({ n: g.length, tutar: tk(g.reduce((a, e) => a + kr(e.amount), 0)) }))(items.filter(e => isIn(e) && !e.hesap && hesabaGirer(e, set))),
+      gelen: (g => ({ n: g.length, tutar: tk(g.reduce((a, e) => a + kr(e.amount), 0)) }))(items.filter(e => isIn(e) && !e.hesap && hg(e))),
       // what the other accounts would show under the account rule (cards: negative = debt)
       hesaplar: hesaplar(Y).filter(h => h.tur !== "nakit").map(h => ({ id: h.id, ad: h.ad, tur: h.tur, kalan: hesapFor(items, Y, h.id, "all").kalan })).filter(h => h.kalan !== 0),
-      transfer: items.filter(e => isTr(e) && hesabaGirer(e, set)).length
+      transfer: items.filter(e => isTr(e) && hg(e)).length
     };
   }
   // one account over a period ("all" or "yyyy-mm"): devir, giren, cikan, kalan (amounts)
   function hesapFor(items, set, id, p, idx) {
     idx = idx || kayitIndeksi(items);
     const h = hesapBul(set, id) || { id, tur: "nakit" };
-    if (id === "nakit" && eskiMod(set)) { const k = eskiKasa(items, set, p); return { devir: k.devir, giren: k.in, cikan: k.out, kalan: k.kalan }; }
+    if (id === "nakit" && eskiMod(set)) { const k = eskiKasa(items, set, p, idx); return { devir: k.devir, giren: k.in, cikan: k.out, kalan: k.kalan }; }
     let devir = acilisOf(set, h), gir = 0, cik = 0;
     items.forEach(e => {
-      if (!hesabaGirer(e, set)) return;
+      if (!hesabaGirer(e, set, idx)) return;
       const x = etki(e, id, idx); if (!x) return;
       const ay = (e.date || "").slice(0, 7);
       if (p !== "all" && ay < p) devir += x;
@@ -260,14 +279,14 @@
   //   in  = money that came into the box (income, refunds and transfers into it)
   //   out = money that left the box (cash expenses and transfers out of it)
   // A transfer between two cash accounts stays inside the box: it is neither in nor out (the balance is the same).
-  function kasaFor(items, set, p) {
-    if (eskiMod(set)) return eskiKasa(items, set, p);
-    const idx = kayitIndeksi(items);
+  function kasaFor(items, set, p, idx0) {
+    const idx = idx0 || kayitIndeksi(items);
+    if (eskiMod(set)) return eskiKasa(items, set, p, idx);
     const ids = hesaplar(set).filter(h => h.tur === "nakit").map(h => h.id);
     let devir = 0, gir = 0, cik = 0;
     ids.forEach(id => { const k = hesapFor(items, set, id, p, idx); devir += kr(k.devir); gir += kr(k.giren); cik += kr(k.cikan); });
     items.forEach(e => {
-      if (!isTr(e) || !hesabaGirer(e, set)) return;
+      if (!isTr(e) || !hesabaGirer(e, set, idx)) return;
       const s = hesapOf(e); if (s === e.hedef || !ids.includes(s) || !ids.includes(e.hedef)) return;
       if (p === "all" || (e.date || "").slice(0, 7) === p) { const a = kr(e.amount); gir -= a; cik -= a; }
     });
@@ -276,8 +295,8 @@
   // the whole book over a period: income, expenses (by account type), refunds, transfers — for the summary cards and reports
   function ozetFor(items, set, p, idx) {
     idx = idx || kayitIndeksi(items);
-    const its = (p === "all" ? items : items.filter(e => (e.date || "").slice(0, 7) === p)).filter(e => hesabaGirer(e, set));
-    const r = { gelir: 0, gider: 0, iade: 0, transfer: 0, tur: {}, hesap: {} };
+    const its = (p === "all" ? items : items.filter(e => (e.date || "").slice(0, 7) === p)).filter(e => hesabaGirer(e, set, idx));
+    const r = { gelir: 0, gider: 0, iade: 0, transfer: 0, tur: Object.create(null), hesap: Object.create(null) };   // keyed by account ids from data: no prototype
     its.forEach(e => {
       if (!tutarGecerli(e)) return;
       const a = kr(e.amount);
@@ -292,15 +311,15 @@
   }
   // running balance after each entry, of the account it moves (transfers: the source account)
   function runningMap(items, set) {
-    const b = {}, m = {}, idx = kayitIndeksi(items);
+    const b = Object.create(null), m = Object.create(null), idx = kayitIndeksi(items);
     if (eskiMod(set)) {
-      let c = kr(set.opening);
-      items.slice().sort(cmpEntry).forEach(e => { if (hesabaGirer(e, set)) c += kasaEtki(e, set, true); m[e.id] = tk(c); });
+      let c = acilisKr(set.opening);
+      items.slice().sort(cmpEntry).forEach(e => { if (hesabaGirer(e, set, idx)) c += kasaEtki(e, set, true); m[e.id] = tk(c); });
       return m;
     }
     hesaplar(set).forEach(h => { b[h.id] = acilisOf(set, h); });
     items.slice().sort(cmpEntry).forEach(e => {
-      if (!hesabaGirer(e, set)) { m[e.id] = tk(b[hesapOf(e, idx)] || 0); return; }
+      if (!hesabaGirer(e, set, idx)) { m[e.id] = tk(b[hesapOf(e, idx)] || 0); return; }
       const ids = isTr(e) ? [hesapOf(e), e.hedef] : [hesapOf(e, idx)];
       ids.forEach(id => { if (id != null) b[id] = (b[id] || 0) + etki(e, id, idx); });
       m[e.id] = tk(b[hesapOf(e, idx)] || 0);
@@ -333,6 +352,19 @@
     const od = set.openingDate;
     if (yeni && od && yeni.date && yeni.date < od && (!eski || eski.date !== yeni.date)) return { kod: "acilis", tarih: od };
     return null;
+  }
+  /* The same guard for an account (not an entry): with a closed month, what the balances rest on is not changed under it.
+     eski = the account before the change (null for a new one), yeni = after it (null when it is deleted).
+     Blocked: a changed opening balance (a deleted account counts as 0), a cash account changing kind, being switched off
+     or on, or being deleted. → null or { kod: "kapali", ay } (ay = the first closed month, as K.degisiklikEngeli). */
+  function hesapEngeli(set, eski, yeni) {
+    const kap = ((set || {}).closed || []).slice().sort()[0];
+    if (!kap) return null;
+    const nakitMi = tt => tt === "nakit";
+    const oA = eski ? +eski.acilis || 0 : 0, nA = yeni ? +yeni.acilis || 0 : 0;
+    const engel = !yeni ? !!eski && (oA !== 0 || nakitMi(eski.tur))
+      : oA !== nA || (eski && eski.tur !== yeni.tur && (nakitMi(eski.tur) || nakitMi(yeni.tur))) || (eski && (eski.durum || "aktif") !== yeni.durum && nakitMi(yeni.tur)) || (!eski && nakitMi(yeni.tur) && yeni.durum !== "aktif");
+    return engel ? { kod: "kapali", ay: kap } : null;
   }
   // rows of an import split into those that can be added and those that fall in a closed month
   function kapaliAyikla(set, rows) {
@@ -381,10 +413,10 @@
   // expenses split by kind of account: nakit = cash box, kart = cards, none = bank, advances and others
   function paySplit(list, set, idx) {
     const r = { nakit: 0, kart: 0, none: 0 }; idx = idx || kayitIndeksi(list);
-    list.forEach(e => { if (!isOut(e) && !isIade(e) || !hesabaGirer(e, set)) return; const a = kr(e.amount) * (isIade(e) ? -1 : 1), tur = hesapTur(set || {}, hesapOf(e, idx)); if (tur === "nakit") r.nakit += a; else if (tur === "kart") r.kart += a; else r.none += a; });
+    list.forEach(e => { if (!isOut(e) && !isIade(e) || !hesabaGirer(e, set, idx)) return; const a = kr(e.amount) * (isIade(e) ? -1 : 1), tur = hesapTur(set || {}, hesapOf(e, idx)); if (tur === "nakit") r.nakit += a; else if (tur === "kart") r.kart += a; else r.none += a; });
     r.nakit = tk(r.nakit); r.kart = tk(r.kart); r.none = tk(r.none); return r;
   }
-  function catSplit(list) { const bc = {}; list.forEach(e => { if (!isOut(e) && !isIade(e) || !hesabaGirer(e)) return; const k = e.cat || "Kategorisiz"; bc[k] = (bc[k] || 0) + kr(e.amount) * (isIade(e) ? -1 : 1); }); return Object.entries(bc).map(([k, v]) => [k, tk(v)]).filter(x => x[1] !== 0).sort((a, b) => b[1] - a[1]); }
+  function catSplit(list, idx) { const bc = {}; idx = idx || kayitIndeksi(list); list.forEach(e => { if (!isOut(e) && !isIade(e) || !hesabaGirer(e, undefined, idx)) return; const k = e.cat || "Kategorisiz"; bc[k] = (bc[k] || 0) + kr(e.amount) * (isIade(e) ? -1 : 1); }); return Object.entries(bc).map(([k, v]) => [k, tk(v)]).filter(x => x[1] !== 0).sort((a, b) => b[1] - a[1]); }
   const isFuel = e => isOut(e) && (e.cat === "Yakıt" || +e.lt > 0);
   function fuelStats(list) {
     const fills = list.filter(e => isFuel(e) && hesabaGirer(e)).slice().sort(cmpEntry);
@@ -479,7 +511,9 @@
      and the final-sigma / dotless-i differences ("DÉPENSE (€)" = "Dépense", Greek capitals lose their accents). */
   const xn = s => String(s ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/ı/g, "i").replace(/ς/g, "σ").replace(/\s+/g, " ").trim();
   const xEsc = s => s.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&");
-  const xTerim = k => { const o = new Set([xn(k)]); for (const l of DILLER) { const v = l === "tr" ? k : sozluk(l, k); if (typeof v === "string") o.add(xn(v)); } return [...o].filter(Boolean).sort((a, b) => b.length - a.length); };
+  // Words of earlier versions of the dictionaries: Excel files written by them must still be read after a term was renamed (terim kararları, 27 Kas).
+  const X_ESKI = { "Gelen para": ["cash in"] };
+  const xTerim = k => { const o = new Set([xn(k)]); for (const l of DILLER) { const v = l === "tr" ? k : sozluk(l, k); if (typeof v === "string") o.add(xn(v)); } for (const e of X_ESKI[k] || []) o.add(xn(e)); return [...o].filter(Boolean).sort((a, b) => b.length - a.length); };
   const xRe = (keys, bas, tam) => new RegExp((bas ? "^" : "(?:^|[^\\p{L}\\p{N}])") + "(?:" + [].concat(keys).flatMap(xTerim).map(xEsc).join("|") + ")" + (tam ? "$" : "(?![\\p{L}\\p{N}])"), "u");
   let XC = null;   // built on first use: every dictionary is loaded by then
   const xc = () => XC || (XC = {
@@ -487,7 +521,7 @@
     devir: xRe(["Devir"], true),
     odemeTransfer: xRe(["Ödeme / transfer"], true, true),   // the "Tür" cell of a transfer row on the Kartlar sheet
     toplam: xRe(["Toplam", "Kalan kasa", "Dönem kapandı"], true),
-    kart: xRe(["Kartlar"], true, true), konsolide: xRe(["Konsolide"], true, true),   // the whole sheet name: "Cards 2025", "Konsolide Bilanço" are somebody else's sheets
+    kart: xRe(["Kartlar"], true, true), konsolide: xRe(["Konsolide"], true, true), fis: xRe(["Fişler"], true, true),   // the whole sheet name: "Cards 2025", "Konsolide Bilanço" are somebody else's sheets
     toplamEtiket: new Set(["Toplam", "Kalan kasa", "Dönem kapandı"].flatMap(xTerim).concat(["total", "totals", "grand total", "subtotal", "sub total", "balance", "cash on hand", "period closed", "genel toplam", "ara toplam"])),
     odeme: [["nakit", "Nakit"], ["kart", "Kart"], ["havale", "Havale"], ["eft", "EFT"]].map(([k, a]) => [k, new Set(xTerim(a))])
   });
@@ -518,7 +552,7 @@
     const n = xn(ad).replace(/ \(\d+\)$/, "");
     const ay = new Set(); for (const l of DILLER) { const a = MONTHS_ALL[l] || aylarIntl(LOC[l], "long"); (a || []).forEach(x => ay.add(xn(x))); }
     const m = /^(.+)_(\d{4})$/.exec(n); if (m && ay.has(m[1])) return "ay";
-    return xc().kart.test(n) ? "kart" : xc().konsolide.test(n) ? "konsolide" : "";
+    return xc().kart.test(n) ? "kart" : xc().konsolide.test(n) ? "konsolide" : xc().fis.test(n) ? "fis" : "";   // "fis": the receipts sheet of an export (rapor-fis.js)
   }
   // the account cell of an export ends with " · <how it was paid>" in the language of the file → "nakit" | "kart" | "havale" | "eft" | ""
   function xlsOdeme(txt) {
@@ -644,8 +678,203 @@
      DESIGN NOTE (repair, not built): per entry "convert at a rate": the user gives a rate; the entry becomes
      cur = e.para, fxAmount = amount, fxRate = rate, amount = round(amount × rate), para = book currency, fxSource "elle". */
   // tek süzgeç (Tur 1): geçerli tutar (Frontend) ve defterle aynı para birimi (Para)
-  function hesabaGirer(e, set) { return tutarGecerli(e) && !uyumsuzMu(e, set === undefined || set === null ? PARA : paraOf(set)); }
-  const kayitParasi = e => typeof e.para === "string" ? e.para : "TRY";
+  // F-18/K-5: a refund bound (iadeOf) to an entry that is itself out of the totals (invalid or over-the-ceiling amount, another currency) is out too: counted alone it
+  // would swell the balance. It needs idx (kayitIndeksi of the WHOLE book); without it (or with the original missing) the refund counts as before.
+  // The check follows the original's own state, so it ends the moment the original is corrected.
+  function hesabaGirer(e, set, idx) {
+    const p = set === undefined || set === null ? PARA : paraOf(set);
+    if (!tutarGecerli(e) || uyumsuzMu(e, p)) return false;
+    return !bagliDisarida(e, p, idx);
+  }
+  function bagliDisarida(e, p, idx) {
+    if (!idx || !isIade(e) || e.iadeOf == null) return false;
+    const o = idx.get(e.iadeOf);
+    return !!o && o !== e && !isIade(o) && (!tutarGecerli(o) || uyumsuzMu(o, p));
+  }
+  // why an entry is out of the totals: "" (it counts) | "tutar" (invalid / over the ceiling) | "tarih" (date cleaned to 0000-00-00) | "sifirlama" (an entry of the book from
+  // before a reset that came back: "XXX" while its own currency equals the book's) | "bagli" (a refund of an entry that is out) | "para" (really another currency)
+  function dislamaNedeni(e, set, idx) {
+    if (!e || hesabaGirer(e, set, idx)) return "";
+    if (!tutarGecerli(e)) return "tutar";
+    const p = set === undefined || set === null ? PARA : paraOf(set);
+    if (bagliDisarida(e, p, idx)) return "bagli";
+    if (e.date === TARIH_SIFIR && e.para === "XXX") return "tarih";
+    if (e.para === "XXX" && e.temizlenen && typeof e.temizlenen === "object" && e.temizlenen.para === p) {
+      const o = idx && isIade(e) && e.iadeOf != null ? idx.get(e.iadeOf) : null;
+      return o && o.date === TARIH_SIFIR ? "bagli" : "sifirlama";
+    }
+    return "para";
+  }
+  // F-21/K-4: an entry that is out of the totals for its currency (another currency, "XXX", an old lira entry in a book that changed) is saved from the form
+  // as an entry of the book's currency: its amount is NOT converted. Returns { eski, yeni } (eski: the currency it was entered in, "" when unknown) when the
+  // user must confirm that, else null. A revived entry of the same currency (temizlenen.para = the book's) and an entry that counts need nothing.
+  function eskiParaUyari(e, set) {
+    if (!e || typeof e !== "object") return null;
+    const p = set === undefined || set === null ? PARA : paraOf(set);
+    if (!tutarGecerli(e) || !uyumsuzMu(e, p)) return null;
+    const tp = e.temizlenen && typeof e.temizlenen === "object" && paraKodMu(e.temizlenen.para) ? e.temizlenen.para.toUpperCase() : "";
+    const eski = tp || (paraKodMu(e.para) ? e.para.toUpperCase() : typeof e.para === "string" ? "" : "TRY");
+    if (eski === p) return null;
+    return { eski: eski === "XXX" ? "" : eski, yeni: p };
+  }
+  // CT-T2: what the confirmation must say. The form may carry a foreign currency (cur !== book currency, e.g. an old USD entry opened in a EUR book with its OLD rate):
+  // then the saved amount is typed x rate, so the text shows THAT amount, never the typed one, and warns when the rate is the old entry's own.
+  // Returns null (no confirmation), or { eski, yeni, donusum, tutar (what will count, number), girilen, cur, kur, eskiKur }.
+  function eskiParaOnayi(old, set, typed, cur, kur) {
+    const pu = eskiParaUyari(old, set); if (!pu) return null;
+    if (!cur || cur === pu.yeni) return Object.assign({ donusum: false, tutar: typed, girilen: typed, cur: pu.yeni, kur: 1, eskiKur: false }, pu);
+    let tutar = NaN; try { tutar = dovizAlanlari(typed, cur, kur, "elle").amount; } catch (x) { /* a rate the form refuses is caught before this */ }
+    return Object.assign({ donusum: true, tutar, girilen: typed, cur, kur: +kur, eskiKur: old.fxRate != null && +old.fxRate === +kur }, pu);
+  }
+  // F-20/K-1: how many refunds bound to the entry (id) are still out of the totals (after the entry itself was corrected)
+  function disaIadeSayisi(items, set, id) {
+    items = Array.isArray(items) ? items : []; const ix = kayitIndeksi(items), o = ix.get(id);
+    if (!o || !hesabaGirer(o, set, ix)) return 0;
+    return items.filter(x => x && isIade(x) && x.iadeOf === id && !hesabaGirer(x, set, ix)).length;
+  }
+  // the entries out of the totals for a reason other than the amount (which has its own warning): [{ e, neden }]
+  function dislananlar(items, set) { items = Array.isArray(items) ? items : []; const ix = kayitIndeksi(items); return items.map(e => ({ e, neden: dislamaNedeni(e, set, ix) })).filter(x => x.neden && x.neden !== "tutar"); }
+  // the currency an entry was saved in, for DISPLAY only (what counts in totals is uyumsuzMu, which is not touched): three letters as
+  // they are, anything else "?" (shown as ¤ by fx)
+  const kayitParasi = e => typeof e.para === "string" ? (/^[A-Za-z]{3}$/.test(e.para) ? e.para : "?") : "TRY";
+  /* The fields of an entry that have a fixed form (CT-30, CT-31, CT-40, CT-42, CT-44). Same rules as app/veri.go and app/web/yerel.js:
+     date: YYYY-MM-DD, a real calendar day, 2000-2100; para / cur: absent, empty or three letters; photo: absent, empty or the id the
+     program made (24-40 characters a-f 0-9: it ends up in a web address); temizlenen: only the record below.
+     A single entry that breaks them is refused. A whole book that arrives (synchronisation, restore) is never refused for it, because
+     refusing would stop the synchronisation for good: kayitTemizle cleans the entry and the user is told which one:
+       para: text that is not three letters -> "XXX" (still another currency than the book: out of the totals, as before); not text -> removed;
+       cur:  not three letters -> "XXX";
+       date: invalid, "0000-00-00" included -> "0000-00-00" and para "XXX" EVERY time: the entry stays out of every total and shows in the red
+             list of entries in another currency (it is never silently counted); a second cleaning changes nothing;
+       photo: not an id the program makes -> the field is removed;
+       temizlenen: any other shape than { date, para, cur, zaman } (text, at most 40 characters) -> removed.
+     What a cleaning replaced (date, para, cur) is kept, shortened, in e.temizlenen with the time, the first time only: the original may be a
+     typing mistake the user wants to see (shown escaped, as "original date" in the entry form). */
+  const TARIH_SIFIR = "0000-00-00", FOTO_KIMLIK = /^[a-f0-9]{24,40}$/;
+  function tarihGecerli(s) {
+    if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    const y = +s.slice(0, 4), m = +s.slice(5, 7), d = +s.slice(8, 10);
+    return y >= 2000 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= new Date(Date.UTC(y, m, 0)).getUTCDate();
+  }
+  const paraKodMu = v => typeof v === "string" && /^[A-Za-z]{3}$/.test(v);
+  const bos = v => v === undefined || v === null || v === "";
+  const kisalt = (v, n) => { const a = Array.from(typeof v === "string" ? v : (JSON.stringify(v) === undefined ? String(v) : JSON.stringify(v))); return a.length > n ? a.slice(0, n).join("") + "…" : a.join(""); };
+  function temizlenenGecerli(v) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+    const k = Object.keys(v);
+    return k.length <= 4 && k.every(a => typeof v[a] === "string" && (a === "zaman" ? v[a].length <= 40 && v[a].includes("T") : ["date", "para", "cur"].includes(a) && Array.from(v[a]).length <= 41));
+  }
+  // cleans e IN PLACE, returns the names of the fields it changed ([] = the entry was clean)
+  function kayitTemizle(e) {
+    const alan = [], ozgun = {};
+    if (!bos(e.temizlenen) && !temizlenenGecerli(e.temizlenen)) { delete e.temizlenen; alan.push("temizlenen"); }
+    if (!bos(e.photo) && !(typeof e.photo === "string" && FOTO_KIMLIK.test(e.photo))) { delete e.photo; alan.push("photo"); }
+    for (const a of ["para", "cur"]) {
+      const v = e[a];
+      if (bos(v) || paraKodMu(v)) continue;
+      ozgun[a] = v;
+      if (a === "para" && typeof v !== "string") delete e[a]; else e[a] = "XXX";
+      alan.push(a);
+    }
+    if (!tarihGecerli(e.date)) {
+      if (e.date !== TARIH_SIFIR) { if (e.date !== undefined && e.date !== null) ozgun.date = e.date; alan.push("date"); }
+      e.date = TARIH_SIFIR;
+      if (e.para !== "XXX") {
+        if (!bos(e.para) && !("para" in ozgun)) ozgun.para = e.para;   // kept with the original date; named in the notice only when it is the only thing that changed
+        e.para = "XXX";
+        if (!alan.includes("para") && !alan.includes("date")) alan.push("para");
+      }
+    }
+    if (Object.keys(ozgun).length && (e.temizlenen === undefined || e.temizlenen === null)) {   // the first cleaning keeps the first originals
+      const t = { zaman: new Date().toISOString() };
+      for (const a in ozgun) t[a] = kisalt(ozgun[a], 40);
+      e.temizlenen = t;
+    }
+    return alan;
+  }
+  // the whole book: the entries that need cleaning are copied (the arguments are not touched) ->
+  // { kayitlar, notlar: [{ tarih (the ORIGINAL date), satici, alanlar, iade (refunds pointing at it: they leave the totals too, F-13), kapali (it was a closed month) }] }
+  // damgala: the cleaned copy gets a NEWER updatedAt, so that it wins over the forged original on every device and the two never swap back (CT-43)
+  function kayitlariTemizle(kayitlar, ayarlar, damgala) {
+    const kapali = new Set(Array.isArray(nesne(ayarlar).closed) ? nesne(ayarlar).closed : []);
+    const notlar = [], temizler = [];   // temizler: [note, id of the entry]
+    const yeni = (Array.isArray(kayitlar) ? kayitlar : []).map(e => {
+      if (!e || typeof e !== "object") return e;
+      const c = Object.assign({}, e), alanlar = kayitTemizle(c);
+      if (!alanlar.length) return e;
+      if (damgala) { const p = typeof e.updatedAt === "string" ? Date.parse(e.updatedAt) : NaN; c.updatedAt = !isNaN(p) && p < DAMGA_EN ? damga(e.updatedAt) : new Date().toISOString(); }   // newer than the original; an unreadable or end-of-range original gets now
+      const n = { tarih: kisalt(e.date === undefined || e.date === null ? "" : e.date, 40), satici: kisalt(e.vendor || e.desc || "", 60), alanlar };
+      if (alanlar.includes("date") && typeof e.date === "string" && kapali.has(e.date.slice(0, 7))) n.kapali = true;
+      notlar.push(n); temizler.push([n, e.id]);
+      return c;
+    });
+    for (const [n, id] of temizler) {
+      if (!n.alanlar.includes("date")) continue;
+      const iadeler = yeni.filter(o => o && o.type === "iade" && o.iadeOf === id), k = iadeler.length;
+      if (k) n.iade = k;
+      if (iadeler.some(o => typeof o.date === "string" && kapali.has(o.date.slice(0, 7)))) n.kapali = true;   // CT-K6: a bound refund in a closed month leaves that month's balance too
+    }
+    // F-13: a refund bound (iadeOf) to an entry with the date "0000-00-00" leaves the totals too (para "XXX": the rule that already keeps an entry
+    // out of every total), else the refund alone would be counted and the balance swell by it. The refund's own currency is kept, shortened, in
+    // temizlenen the first time. It runs every time (a refund that arrives later is caught too); a refund that is already "XXX" is left as it is.
+    const sifir = new Set(yeni.filter(o => o && typeof o === "object" && o.date === TARIH_SIFIR && o.id !== undefined).map(o => o.id));
+    if (sifir.size) for (let i = 0; i < yeni.length; i++) {
+      const o = yeni[i];
+      if (!o || typeof o !== "object" || o.type !== "iade" || !sifir.has(o.iadeOf) || o.para === "XXX") continue;
+      const c = Object.assign({}, o);
+      if (typeof c.para === "string" && c.para !== "" && (c.temizlenen === undefined || c.temizlenen === null)) c.temizlenen = { zaman: new Date().toISOString(), para: kisalt(c.para, 40) };
+      c.para = "XXX";
+      if (damgala) { const p = typeof o.updatedAt === "string" ? Date.parse(o.updatedAt) : NaN; c.updatedAt = !isNaN(p) && p < DAMGA_EN ? damga(o.updatedAt) : new Date().toISOString(); }
+      yeni[i] = c;
+    }
+    return { kayitlar: yeni, notlar };
+  }
+  const kayitGecerli = e => !e || typeof e !== "object" || kayitTemizle(Object.assign({}, e)).length === 0;
+  // the warning text for cleaned entries: liste = [{ tekneAdi, notlar }] (the text is written with esc() by the screen)
+  function temizMetni(liste) {
+    const satirlar = [];
+    for (const w of liste) for (const n of w.notlar) satirlar.push((w.tekneAdi ? w.tekneAdi + " — " : "") + (n.tarih || "—") + " · " + (n.satici || "—") + " (" + n.alanlar.join("/") + (n.iade ? "; " + t("bağlı iade: {n}", { n: n.iade }) : "") + (n.kapali ? "; " + t("kapanmış dönem") : "") + ")");
+    return t("Eşitlemeyle ya da yedekle gelen kayıtlarda geçersiz alanlar temizlendi: {liste}. Geçersiz tarihli kayıtlar toplamlara katılmaz; kayıtları kontrol edin.", { liste: satirlar.slice(0, 5).join("; ") + (satirlar.length > 5 ? "… (+" + (satirlar.length - 5) + ")" : "") });
+  }
+  function defterTemizle(defter, damgala) {
+    const c = Object.assign({}, nesne(defter)), r = kayitlariTemizle(c.kayitlar, c.ayarlar, damgala);
+    if (Array.isArray(c.kayitlar)) c.kayitlar = r.kayitlar;
+    return { defter: c, notlar: r.notlar };
+  }
+  /* The importer's dates (CT-41): one rule for what a date is, the same as for a saved entry (K.tarihGecerli: a real day, 2000-2100).
+     A text or an Excel serial number that is not such a date is no date: the row is skipped with its row number, it never becomes a
+     wrong day (31.02.2026, 1995, serial 30000 or 80000). An EMPTY date cell keeps the date of the row above, as before. */
+  const XLS_AY = Object.assign(Object.create(null), {
+    ocak: 1, şubat: 2, subat: 2, mart: 3, nisan: 4, mayıs: 5, mayis: 5, haziran: 6, temmuz: 7, ağustos: 8, agustos: 8, eylül: 9, eylul: 9, ekim: 10, kasım: 11, kasim: 11, aralık: 12, aralik: 12,
+    january: 1, february: 2, march: 3, april: 4, may: 5, june: 6, july: 7, august: 8, september: 9, october: 10, november: 11, december: 12,
+    jan: 1, feb: 2, mar: 3, apr: 4, jun: 6, jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
+    // the short Turkish month names of Excel's "d mmm yyyy" ("5 Kas 2026"); mar and may are the same as the long ones
+    oca: 1, şub: 2, sub: 2, nis: 4, haz: 6, tem: 7, ağu: 8, agu: 8, eyl: 9, eki: 10, kas: 11, ara: 12
+  });
+  function xlsYMD(y, m, d) { if (y < 100) y += 2000; const iso = y + "-" + pad(m) + "-" + pad(d); return tarihGecerli(iso) ? iso : null; }
+  // t1904: the workbook counts from 1904 (Excel for Mac): its serial numbers are 1462 smaller than in the usual 1900 system
+  function xlsTarih(v, t1904) {
+    if (v == null || v === "") return null;
+    if (typeof v === "number") {
+      if (t1904) v += 1462;
+      if (!(v > 30000 && v < 80000)) return null;
+      const d = new Date(Date.UTC(1899, 11, 30) + Math.floor(v) * 864e5);   // 45966.7 is 45966 (the day), not the next day
+      const iso = d.getUTCFullYear() + "-" + pad(d.getUTCMonth() + 1) + "-" + pad(d.getUTCDate());
+      return tarihGecerli(iso) ? iso : null;
+    }
+    const s = String(v).toLocaleLowerCase("tr").trim(); let m;
+    if ((m = s.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/))) return xlsYMD(+m[1], +m[2], +m[3]);
+    if ((m = s.match(/(\d{1,2})\s*[-–]\s*\d{1,2}[./](\d{1,2})[./](\d{2,4})/))) return xlsYMD(+m[3], +m[2], +m[1]);
+    if ((m = s.match(/(\d{1,2})[-./](\d{1,2})[-./](\d{2,4})/))) return xlsYMD(+m[3], +m[2], +m[1]);
+    if ((m = s.match(/(\d{1,2})[\s.\-/]+([a-zçğıöşü]+)\.?[\s.\-/]+(\d{4})/))) { const mo = XLS_AY[m[2]] || XLS_AY[m[2].replace(/ı/g, "i")]; if (mo) return xlsYMD(+m[3], mo, +m[1]); }
+    return null;
+  }
+  // one row: ham = the date cell, son = the date of the row above -> { tarih } or { atla: true, neden: "tarih" } (a date that is not one)
+  function xlsSatirTarihi(ham, son, t1904) {
+    if (ham == null || (typeof ham === "string" && !ham.trim())) return { tarih: son || null };
+    const t = xlsTarih(ham, t1904);
+    return t ? { tarih: t } : { atla: true, neden: "tarih" };
+  }
   const paraOf = set => { const p = nesne(set).para; return typeof p === "string" && CUR[p.trim().toUpperCase()] ? p.trim().toUpperCase() : "TRY"; };
   function amountNote(e) {
     const parts = [];
@@ -664,7 +893,10 @@
   const zamanOf = e => ISO(e && (e.updatedAt || e.createdAt));
   const kar = (a, b) => a < b ? -1 : a > b ? 1 : 0;
   // A time stamp later than prev, so an edit made after seeing a version always replaces it (even if this clock is a little behind).
-  function damga(prev) { let n = Date.now(); const p = prev ? Date.parse(prev) : NaN; if (!isNaN(p) && n <= p) n = p + 1; return new Date(n).toISOString(); }
+  // A stamp is always a valid ISO time and never later than DAMGA_EN (year 9999 keeps the four-digit form, so strings compare right); a previous
+  // value that is not a text or cannot be read (CT-50: "abc", a number, "+275760-09-13T00:00:00.000Z" + 1 is not a date) is ignored.
+  const DAMGA_EN = Date.UTC(9999, 11, 31, 23, 59, 59, 999);
+  function damga(prev) { let n = Date.now(); const p = typeof prev === "string" ? Date.parse(prev) : NaN; if (!isNaN(p) && n <= p) n = p + 1; return new Date(Math.min(n, DAMGA_EN)).toISOString(); }
   // JSON with sorted keys, so two copies of the same data always compare equal.
   function sabit(v) {
     if (Array.isArray(v)) return "[" + v.map(sabit).join(",") + "]";
@@ -750,9 +982,32 @@
     }
     if ("rates" in aA || "rates" in aB) ayar.rates = kur;
     ayar._zaman = zOut;
-    const pb = paraBirlestir(aA, aB, A, B, ayar.para, kayitlar);
+    // A copy whose currency was only CHOSEN (the first-use card: paraSecildi) never moves a copy that already has content (opening cash, an account
+    // balance, entries) to another currency: the currency of the copy with content is kept (a book without the field is the lira). Books without
+    // paraSecildi are merged exactly as before.
+    const icerik = (a, X) => (Array.isArray(X.kayitlar) && X.kayitlar.length > 0) || a.opening != null || (Array.isArray(a.hesaplar) && a.hesaplar.some(h => h && +h.acilis !== 0 && !isNaN(+h.acilis)));
+    const cA = icerik(aA, A), cB = icerik(aB, B);
+    if (cA !== cB) {
+      const [dolu, bos] = cA ? [aA, aB] : [aB, aA];
+      if (bos.paraSecildi === true) ayar.para = paraOf(dolu);
+    }
+    // F-16: an entry created BEFORE the book was reset (paraSifirlandi) that is alive again (a device that did not know of the reset edited it:
+    // its deletion mark is older than the edit) is an entry of the OLD book. It is counted as "another currency" (para "XXX": out of every total,
+    // in the red list, nothing is deleted) and takes no part in choosing the book's currency, so the user's new currency choice is not turned back.
+    // Deterministic (no clock): the same result on every device and in either order; a second merge changes nothing.
+    const ps = ISO(ayar.paraSifirlandi);
+    // CT-K1/K2: an entry that carries sifirlamaSonrasi = this reset's time was restored from the archive or edited/saved on a device that KNEW the reset
+    // (a deliberate act): it is not "revived by a device that did not know", so it is never marked (and stays counted after the user corrects it).
+    const dirilen = e => !!ps && !!sil[e.id] && !!ISO(e.createdAt) && ISO(e.createdAt) < ps && ISO(e.sifirlamaSonrasi) !== ps;
+    const pb = paraBirlestir(aA, aB, A, B, ayar.para, ps ? kayitlar.filter(e => !dirilen(e)) : kayitlar);
     if (pb !== undefined) ayar.para = pb;
-    return { uygulama: "Kasa Jurnali", surum: 2, ayarlar: ayar, kayitlar, silinenler: sil };
+    const son = ps ? kayitlar.map(e => {
+      if (!dirilen(e) || e.para === "XXX") return e;
+      const c = Object.assign({}, e, { para: "XXX" });
+      if (c.temizlenen === undefined || c.temizlenen === null) c.temizlenen = { zaman: ISO(e.updatedAt) || ISO(e.createdAt), para: kisalt(typeof e.para === "string" && e.para ? e.para : "TRY", 40) };
+      return c;
+    }) : kayitlar;
+    return { uygulama: "Kasa Jurnali", surum: 2, ayarlar: ayar, kayitlar: son, silinenler: sil };
   }
   /* The book's currency follows its entries: amounts are never converted, so merging two copies must not move a book
      with entries to another currency.
@@ -780,6 +1035,53 @@
     else p = paraOfE(kayitlar.reduce((a, e) => { const c = kar(ISO(e.createdAt), ISO(a.createdAt)) || kar(e.id, a.id); return c < 0 ? e : a; }));
     return p === now ? undefined : p;
   }
+  /* After a synchronisation: did the settings that came in change the remaining cash of a month this device had closed?
+     A PURE check, only for a warning: it never changes the merged book (birlestir is untouched) and no total.
+     onceki = this device's book before the merge, sonraki = the merged book. The entries of the merged book are used for
+     both sides, so only the effect of the settings (opening, openingDate, accounts' opening balances / kind / status,
+     currency) shows. → null (nothing to say) or { aylar: [{ ay, hesap (null = cash box), eski, yeni }], para: bool, ayarlar: [names] } */
+  function kapaliDonemEtkisi(onceki, sonraki) {
+    const A = nesne(onceki), B = nesne(sonraki), aA = nesne(A.ayarlar), aB = nesne(B.ayarlar);
+    const kapali = (Array.isArray(aA.closed) ? aA.closed : []).filter(ayMi).slice().sort();
+    if (!kapali.length) return null;
+    // only the settings the balances are computed from are compared (opening cash and date, the accounts' id / kind / opening balance /
+    // status, the currency, the cash rule): when they are equal nothing can have changed and a large book is not walked at all. Names,
+    // exchange rates, stamps and the like do not change a balance, so they never start the full pass.
+    const belirleyen = a => sabit({ opening: a.opening, openingDate: a.openingDate, para: paraOf(a), kural: a.hesapKurali, hesaplar: hesaplar({ hesaplar: a.hesaplar }).map(h => [h.id, h.tur, +h.acilis || 0, h.durum || "aktif"]).sort() });
+    if (belirleyen(aA) === belirleyen(aB)) return null;
+    const items = Array.isArray(B.kayitlar) ? B.kayitlar : [];
+    const idx = kayitIndeksi(items);   // built once for every call below
+    const hA = hesaplar(aA), hB = hesaplar(aB);
+    const adi = id => { const h = hB.find(x => x.id === id) || hA.find(x => x.id === id); return h ? { id: h.id, ad: h.ad, son4: h.son4 } : { id, ad: id }; };
+    const aylar = [];
+    for (const ay of kapali) {
+      const eski = kasaFor(items, aA, ay, idx).kalan, yeni = kasaFor(items, aB, ay, idx).kalan;
+      if (eski !== yeni) aylar.push({ ay, hesap: null, hesapBilgi: null, eski, yeni });   // the cash box
+      for (const id of new Set([...hA.map(h => h.id), ...hB.map(h => h.id)])) {   // every other account's own balance (bank, card ...)
+        if (hesapTur(aA, id) === "nakit" || hesapTur(aB, id) === "nakit") continue;
+        const e1 = hesapFor(items, aA, id, ay, idx).kalan, y1 = hesapFor(items, aB, id, ay, idx).kalan;
+        if (e1 !== y1) aylar.push({ ay, hesap: id, hesapBilgi: adi(id), eski: e1, yeni: y1 });
+      }
+    }
+    const paraEski = paraOf(aA), paraYeni = paraOf(aB), para = paraEski !== paraYeni;
+    if (!aylar.length && !para) return null;
+    const ayarlar = ["opening", "openingDate"].filter(k => sabit(aA[k]) !== sabit(aB[k]));
+    if (para) ayarlar.push("para");
+    const hz = h => { const m = {}; h.forEach(x => { m[x.id] = [+x.acilis || 0, x.tur, x.durum || "aktif"]; }); return sabit(m); };
+    if (hz(hA) !== hz(hB)) ayarlar.push("hesaplar");
+    // amounts are in the currency of the book as it was (paraEski); when the currency itself changed the old one is the one to show
+    return { aylar, para, paraEski, paraYeni, ayarlar };
+  }
+  /* The warning text for one boat: w = { tekneAdi, ke } (ke = kapaliDonemEtkisi result). Amounts are written in the currency
+     the book had before the synchronisation (paraEski); when the currency itself changed that is said, with both codes. */
+  function kapaliDonemMetni(w) {
+    const ke = w.ke, hAd = b => (b ? (VARSAYILAN_HESAPLAR.some(v => v.id === b.id && v.ad === b.ad) ? t(b.ad) : b.ad) + (b.son4 ? " ··" + b.son4 : "") : "");
+    const liste = ke.aylar.slice(0, 3).map(x => monthLabel(x.ay) + (x.hesap ? " · " + hAd(x.hesapBilgi) : "") + " " + fx(x.eski, ke.paraEski) + " → " + fx(x.yeni, ke.paraEski)).join("; ") + (ke.aylar.length > 3 ? "…" : "");
+    const m = ke.para
+      ? t("Eşitlemeyle gelen ayar defterin para birimini değiştirdi ({eski} → {yeni}); kapanmış aylar etkilenmiş olabilir. Ayarlar’ı kontrol edin.", { eski: ke.paraEski, yeni: ke.paraYeni }) + (liste ? " " + liste : "")
+      : t("Eşitlemeyle gelen ayar kapanmış ayların devrini değiştirdi: {liste}. Ayarlar’ı kontrol edin.", { liste });
+    return w.tekneAdi ? w.tekneAdi + " — " + m : m;
+  }
   // The part of a book that travels between devices, in a fixed form for comparing.
   function ortakOzet(D) {
     D = nesne(D);
@@ -796,11 +1098,11 @@
 
   Object.assign(KJ, {
     setLang, t, pad, r2, tl, num, qty, fx, dec, pct, ltStr, perL, CUR, curName, PARALAR, setPara, paraKodu, paraSym, kurStr, tp,
-    KUR_KAYNAKLARI, dovizAlanlari, paraToplam, caprazKur, paraTablosu, kurlarFor, kurGecerli, hatirlananKur, kurHatirla, paraTani, paraUyumsuz, hesabaGirer, kayitParasi, paraOfSet: paraOf, todayISO, curYM, monthName, monthLabel, shortMon, addMonth, dmy, dateTime, esc, lower,
-    isIn, isOut, isTr, isIade, sums, cmpEntry, kasaFor, hesapFor, ozetFor, runningMap, eskiMod, eskiDefter, kayitIndeksi, kasaEtki, kasadaMi, kuralEtkisi, HESAP_TURLERI, VARSAYILAN_HESAPLAR, hesaplar, hesapBul, hesapOf, hesapTur, etki, monthRange, ayMi, monthsWithData, isClosed, degisiklikEngeli, kapaliAyikla, tutarGecerli, gecersizKayitlar, CATS, catLabel, catKey, guessCat, payName, paySplit, catSplit,
+    KUR_KAYNAKLARI, dovizAlanlari, paraToplam, caprazKur, paraTablosu, kurlarFor, kurGecerli, hatirlananKur, kurHatirla, paraTani, paraUyumsuz, hesabaGirer, dislamaNedeni, dislananlar, eskiParaUyari, eskiParaOnayi, disaIadeSayisi, bagliDisarida, acilisGecerli, gecersizAcilis, kayitParasi, kayitGecerli, kayitTemizle, defterTemizle, tarihGecerli, temizMetni, temizlenenGecerli, xlsTarih, xlsSatirTarihi, paraOfSet: paraOf, todayISO, curYM, monthName, monthLabel, shortMon, addMonth, dmy, dateTime, esc, lower,
+    isIn, isOut, isTr, isIade, sums, cmpEntry, kasaFor, hesapFor, ozetFor, runningMap, eskiMod, eskiDefter, kayitIndeksi, kasaEtki, kasadaMi, kuralEtkisi, HESAP_TURLERI, VARSAYILAN_HESAPLAR, hesaplar, hesapBul, hesapOf, hesapTur, etki, monthRange, ayMi, monthsWithData, isClosed, degisiklikEngeli, hesapEngeli, kapaliAyikla, tutarGecerli, TUTAR_USTSINIR, gecersizKayitlar, CATS, catLabel, catKey, guessCat, payName, paySplit, catSplit,
     DILLER, LOC, DIL_ADI, dilGecerli, dilBul, sozluk, yasalNot,
     isFuel, fuelStats, parseLt, toNum, toNumInput, toNumKutu, amountNote, xlsAlan, xlsSatirTuru, xlsSayfaTuru, xlsOdemeTransferMi, xlsHesapEsle, xlsToplamEtiketi, xlsOdeme,
-    YEREL_AYAR, damga, sabit, ayarFarki, birlestir, ayniMi, uzakHali, zamanOf
+    YEREL_AYAR, damga, sabit, ayarFarki, birlestir, kapaliDonemEtkisi, kapaliDonemMetni, ayniMi, uzakHali, zamanOf
   });
   setLang("tr"); setPara("TRY");
   g.KJ = KJ;

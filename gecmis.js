@@ -110,12 +110,12 @@
   K.uzakHali = (D, cihaz) => Object.assign(asilUzak(D, cihaz), { silinenKayitlar: nesne(nesne(D).silinenKayitlar) });
 
   /* ---------------- gösterim ---------------- */
-  const ALAN = {
-    type: "Kayıt türü", date: "Tarih", amount: "Tutar", vendor: "Şirket / satıcı", desc: "Açıklama", cat: "Kategori", hesap: "Hesap",
+  const ALAN = Object.assign(Object.create(null), {
+    type: "Kayıt türü", date: "Tarih", amount: "Tutar", vendor: "Firma", desc: "Açıklama", cat: "Kategori", hesap: "Hesap",
     hedef: "Hedef hesap", pay: "Ödeme şekli", note: "Not", photo: "Fiş fotoğrafı", lt: "Yakıt (litre)", cur: "Para birimi",
     fxAmount: "Döviz tutarı", fxRate: "Kur", iadeOf: "İade edilen harcama", para: "Defter para birimi"
-  };
-  const TUR = { out: "Harcama", in: "Gelen para", tr: "Transfer", iade: "İade" };
+  });
+  const TUR = Object.assign(Object.create(null), { out: "Harcama", in: "Gelen para", tr: "Transfer", iade: "İade" });
   // c: { hesapAd(id) } — uygulamanın hesap adı biçimi
   function deger(k, v, c) {
     const t = K.t;

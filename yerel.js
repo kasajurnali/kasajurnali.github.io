@@ -44,6 +44,13 @@
     if (!df.silinenler || typeof df.silinenler !== "object") df.silinenler = {};
     return { df, rev, var: !!d };
   }
+  // photos of entries cleared by "reset the book" ({id: time} in the setting korunanFoto): valid id, younger than 400 days, at most 5000 (same rule as app/tekne.go korunanFotolar)
+  function korunanFoto(ayar) {
+    const m = ayar && ayar.korunanFoto, l = [];
+    if (!m || typeof m !== "object" || Array.isArray(m)) return l;
+    for (const id of Object.keys(m)) { const z = Date.parse(m[id]); if (/^[a-f0-9]{24,40}$/.test(id) && typeof m[id] === "string" && !isNaN(z) && Date.now() - z <= 400 * 864e5) { l.push(id); if (l.length >= 5000) break; } }
+    return l;
+  }
   const gun = () => { const d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
   async function yaz(df, rev, onceki, tekne) {
     // a copy of the book as it was before today's first change; the newest 30 days are kept (for each boat)
@@ -88,12 +95,83 @@
   const KIMLIK = /^[A-Za-z0-9_-]{1,64}$/, FOTO = /^[a-f0-9]{24,40}$/;
   const YEREL = ["lang", "kabul", "guncelleme"];
   class Hata extends Error { constructor(m, kod, durum) { super(m); this.kod = kod || ""; this.durum = durum || 500; } }
-  function dogrula(k) {
+  // date: YYYY-MM-DD, a real day, 2000-2100 (same as app/veri.go tarihGecerli and KJ.tarihGecerli in hesap.js)
+  const TARIH_SIFIR = "0000-00-00", PARA_KOD = /^[A-Za-z]{3}$/;
+  function tarihGecerli(s) {
+    if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    const y = +s.slice(0, 4), m = +s.slice(5, 7), d = +s.slice(8, 10);
+    return y >= 2000 && y <= 2100 && m >= 1 && m <= 12 && d >= 1 && d <= new Date(Date.UTC(y, m, 0)).getUTCDate();
+  }
+  // a whole book arriving (synchronisation, restore) is cleaned, never refused for these fields (CT-31); rules as app/veri.go kayitTemizle
+  // and KJ.kayitTemizle (hesap.js): para / cur / date / photo / temizlenen, the originals kept, shortened, in `temizlenen`
+  const alanYok = v => v === undefined || v === null || v === "";
+  const kisalt = (v, n) => { const a = Array.from(typeof v === "string" ? v : (JSON.stringify(v) === undefined ? String(v) : JSON.stringify(v))); return a.length > n ? a.slice(0, n).join("") + "…" : a.join(""); };
+  function temizlenenGecerli(v) {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+    const k = Object.keys(v);
+    return k.length <= 4 && k.every(a => typeof v[a] === "string" && (a === "zaman" ? v[a].length <= 40 && v[a].includes("T") : ["date", "para", "cur"].includes(a) && Array.from(v[a]).length <= 41));
+  }
+  function kayitTemizle(e) {
+    const alan = [], ozgun = {};
+    if (!alanYok(e.temizlenen) && !temizlenenGecerli(e.temizlenen)) { delete e.temizlenen; alan.push("temizlenen"); }
+    if (!alanYok(e.photo) && !(typeof e.photo === "string" && FOTO.test(e.photo))) { delete e.photo; alan.push("photo"); }
+    for (const a of ["para", "cur"]) {
+      const v = e[a];
+      if (alanYok(v) || (typeof v === "string" && PARA_KOD.test(v))) continue;
+      ozgun[a] = v;
+      if (a === "para" && typeof v !== "string") delete e[a]; else e[a] = "XXX";
+      alan.push(a);
+    }
+    if (!tarihGecerli(e.date)) {
+      if (e.date !== TARIH_SIFIR) { if (e.date !== undefined && e.date !== null) ozgun.date = e.date; alan.push("date"); }
+      e.date = TARIH_SIFIR;
+      if (e.para !== "XXX") {
+        if (!alanYok(e.para) && !("para" in ozgun)) ozgun.para = e.para;
+        e.para = "XXX";
+        if (!alan.includes("para") && !alan.includes("date")) alan.push("para");
+      }
+    }
+    if (Object.keys(ozgun).length && (e.temizlenen === undefined || e.temizlenen === null)) {
+      const t = { zaman: new Date().toISOString() };
+      for (const a in ozgun) t[a] = kisalt(ozgun[a], 40);
+      e.temizlenen = t;
+    }
+    return alan;
+  }
+  let sonNotlar = [];
+  function kayitlariTemizle(kayitlar) {
+    sonNotlar = [];
+    const liste = (kayitlar || []).filter(e => e && typeof e === "object"), temizler = [];
+    for (const e of liste) {
+      const tr = e.date, sat = e.vendor || e.desc || "", alanlar = kayitTemizle(e);
+      if (alanlar.length) { const n = { tarih: kisalt(tr === undefined || tr === null ? "" : tr, 40), satici: kisalt(sat, 60), alanlar }; sonNotlar.push(n); temizler.push([n, e.id]); }
+    }
+    for (const [n, id] of temizler) if (n.alanlar.includes("date")) { const k = liste.filter(o => o.type === "iade" && o.iadeOf === id).length; if (k) n.iade = k; }
+    // F-13: a refund bound to an entry with the date "0000-00-00" leaves the totals too (para "XXX"; as app/veri.go iadeleriDisla and KJ.kayitlariTemizle)
+    const sifir = new Set(liste.filter(o => o.date === TARIH_SIFIR && o.id !== undefined).map(o => o.id));
+    if (sifir.size) for (const o of liste) {
+      if (o.type !== "iade" || !sifir.has(o.iadeOf) || o.para === "XXX") continue;
+      if (typeof o.para === "string" && o.para !== "" && (o.temizlenen === undefined || o.temizlenen === null)) o.temizlenen = { zaman: new Date().toISOString(), para: kisalt(o.para, 40) };
+      o.para = "XXX";
+    }
+  }
+  // F-17/Q-2: a refused entry is told apart from a write failure ("Kayıt geçersiz", not "check the disk")
+  function dogrula(k, toplu) { try { dogrulaIc(k, toplu); } catch (e) { if (e instanceof Hata) e.kayit = true; throw e; } }
+  function dogrulaIc(k, toplu) {
     if (!k || typeof k !== "object" || !KIMLIK.test(k.id || "")) throw new Hata("geçersiz kayıt kimliği");
     if (!["in", "out", "tr", "iade"].includes(k.type)) throw new Hata("geçersiz kayıt türü");
+    // a numeric text amount is read as the number (as K.tutarGecerli and app/veri.go do), CT-47
+    // F-5: a single entry takes digits and a decimal point only ("12.5", " 12 "; not "1e3", "0x10", "1_000", "12,5") and at most 1e11; a whole book (toplu) is never refused for the ceiling: the window leaves such an entry out of the totals
+    if (typeof k.amount === "string" && (toplu ? /^\s*\d+(\.\d+)?([eE][+-]?\d+)?\s*$/ : /^\s*\d+(\.\d+)?\s*$/).test(k.amount) && isFinite(Number(k.amount))) k.amount = Number(k.amount);
     if (typeof k.amount !== "number" || !isFinite(k.amount)) throw new Hata("tutar sayı olmalı");
-    if (typeof k.date !== "string" || k.date.length !== 10) throw new Hata("tarih eksik");
+    if (!toplu && (k.amount < 0 || k.amount > 1e11)) throw new Hata("tutar sınırı aşıldı");
+    if (typeof k.date !== "string" || !k.date) throw new Hata("tarih eksik");
+    if (!tarihGecerli(k.date) && !(toplu && k.date === TARIH_SIFIR && k.para === "XXX")) throw new Hata("geçersiz tarih");
+    for (const a of ["para", "cur"]) if (!alanYok(k[a]) && !(typeof k[a] === "string" && PARA_KOD.test(k[a]))) throw new Hata("geçersiz para birimi");   // GT-1 (as app/veri.go)
+    if (!alanYok(k.photo) && !(typeof k.photo === "string" && FOTO.test(k.photo))) throw new Hata("geçersiz fotoğraf kimliği");   // CT-44: it ends up in a web address
+    if (!alanYok(k.temizlenen) && !temizlenenGecerli(k.temizlenen)) throw new Hata("geçersiz temizlik kaydı");
   }
+  const acilisGecerli = v => { if (v === undefined || v === null || v === "") return true; const x = typeof v === "number" ? v : typeof v === "string" && /^\s*\d+(\.\d+)?([eE][+-]?\d+)?\s*$/.test(v.replace(/^\s*-/, "")) ? Number(v) : NaN; return isFinite(x) && Math.abs(x) <= 1e11; };   // as K.acilisGecerli (hesap.js) and acilisGecerli in app/veri.go
   const isoMu = z => typeof z === "string" && !isNaN(Date.parse(z)) && /^\d{4}-\d{2}-\d{2}T/.test(z);
   // deleted entries older than 400 days leave the archive; at most the newest 2000 are kept (same rule as gecmis.js and veri.go)
   function arsivBuda(a) {
@@ -102,6 +180,7 @@
     l.sort((x, y) => Date.parse(a[y].zaman) - Date.parse(a[x].zaman)).slice(2000).forEach(id => { delete a[id]; });
   }
   function uygula(df, rev, is) {
+    sonNotlar = [];
     switch (is.islem) {
       case "kaydet": {
         dogrula(is.kayit);
@@ -119,7 +198,8 @@
       case "senk": {
         if (!is.defter || typeof is.taban !== "number") throw new Hata("defter eksik");
         if (is.taban !== rev) throw new Hata("çakışma", "cakisma", 409);
-        (is.defter.kayitlar || []).forEach(dogrula);
+        kayitlariTemizle(is.defter.kayitlar);
+        (is.defter.kayitlar || []).forEach(k => dogrula(k, true));
         const a = Object.assign({}, is.defter.ayarlar || {});
         for (const k of YEREL) { if (k in df.ayarlar) a[k] = df.ayarlar[k]; else delete a[k]; }
         df.ayarlar = a; df.kayitlar = is.defter.kayitlar || []; df.silinenler = is.defter.silinenler || {};
@@ -129,6 +209,8 @@
       case "ayar": {
         const d = is.degisen || {}, z = is.damgalar || {};
         if (!Object.keys(d).length && !Object.keys(z).length) throw new Hata("ayarlar eksik");
+        const eskiHes = new Map((Array.isArray(df.ayarlar.hesaplar) ? df.ayarlar.hesaplar : []).filter(h => h && typeof h === "object").map(h => [h.id, h.acilis]));   // a value already stored unchanged is not refused (CT-T4)
+        if ((!acilisGecerli(d.opening) && String(d.opening) !== String(df.ayarlar.opening)) || (Array.isArray(d.hesaplar) && d.hesaplar.some(h => h && typeof h === "object" && !acilisGecerli(h.acilis) && !(eskiHes.has(h.id) && String(eskiHes.get(h.id)) === String(h.acilis))))) throw new Hata("tutar sınırı aşıldı");   // F-19: an opening above 1e11 is refused here (a whole book that arrives never is)
         for (const k in d) { if (!k || k === "_zaman" || k.length > 64) throw new Hata("geçersiz ayar"); df.ayarlar[k] = d[k]; }
         if (Object.keys(z).length) {
           const zz = Object.assign({}, df.ayarlar._zaman || {});
@@ -142,13 +224,14 @@
         df.ayarlar = is.ayarlar;
         break;
       case "toplu":
-        (is.kayitlar || []).forEach(dogrula);
+        (is.kayitlar || []).forEach(k => dogrula(k));   // (an index must never become the `toplu` flag, CT-45)
         df.kayitlar.push(...(is.kayitlar || []));
         break;
       case "tumunu": case "geriyukle":
         if (!is.defter) throw new Hata("defter eksik");
         if (typeof is.taban === "number" && is.taban !== rev) throw new Hata("çakışma", "cakisma", 409);
-        (is.defter.kayitlar || []).forEach(dogrula);
+        kayitlariTemizle(is.defter.kayitlar);
+        (is.defter.kayitlar || []).forEach(k => dogrula(k, true));
         df.ayarlar = is.defter.ayarlar || {}; df.kayitlar = is.defter.kayitlar || [];
         if (is.defter.silinenler) df.silinenler = is.defter.silinenler;
         if (is.defter.silinenKayitlar) df.silinenKayitlar = is.defter.silinenKayitlar;
@@ -162,11 +245,11 @@
   const yok = () => new Response(null, { status: 204 });
   const hata = (m, durum, kod) => json({ hata: m, kod: kod || "" }, durum || 500);
   const EN = {
-    "geçersiz kayıt kimliği": "invalid entry id", "geçersiz kayıt türü": "invalid entry type", "tutar sayı olmalı": "amount must be a number", "tarih eksik": "date missing",
+    "geçersiz kayıt kimliği": "invalid entry id", "geçersiz kayıt türü": "invalid entry type", "tutar sayı olmalı": "amount must be a number", "tarih eksik": "date missing", "geçersiz para birimi": "invalid currency", "geçersiz tarih": "invalid date", "geçersiz fotoğraf kimliği": "invalid photo id", "geçersiz temizlik kaydı": "invalid clean-up record",
     "defter eksik": "book missing", "ayarlar eksik": "settings missing", "geçersiz ayar": "invalid setting", "geçersiz ayar zamanı": "invalid setting time", "bilinmeyen işlem": "unknown operation",
-    "Kaydedilemedi": "Could not save", "Fotoğraf kaydedilemedi": "The photo could not be saved", "Kayıtlar bu arada değişti; yeniden deneyin.": "The records changed meanwhile; please try again.",
+    "Kaydedilemedi": "Could not save", "Kayıt geçersiz": "Entry not valid", "tutar sınırı aşıldı": "the amount is above the limit", "Fotoğraf kaydedilemedi": "The photo could not be saved", "Kayıtlar bu arada değişti; yeniden deneyin.": "The records changed meanwhile; please try again.",
     "Bu dosya bir Excel (.xlsx) dosyası değil. Eski .xls dosyalarını Excel'de açıp .xlsx olarak kaydedin.": "This file is not an Excel (.xlsx) file. Open old .xls files in Excel and save them as .xlsx.",
-    "Excel dosyası okunamadı (çalışma kitabı yok).": "The Excel file could not be read (no workbook).", "Excel dosyasında okunabilir sayfa bulunamadı.": "No readable sheet was found in the Excel file.",
+    "Excel dosyası okunamadı (çalışma kitabı yok).": "The Excel file could not be read (no workbook).", "Excel dosyasında okunabilir sayfa bulunamadı.": "No readable sheet was found in the Excel file.", "Excel dosyası beklenenden çok büyük açılıyor; okunmadı.": "The Excel file unpacks to far more than expected; it was not read.",
     "Rapor bulunamadı": "Report not found", "Tekne bulunamadı": "Boat not found", "geçersiz tekne kimliği": "invalid boat id", "geçersiz tekne durumu": "invalid boat status", "geçersiz tekne adı": "invalid boat name", "geçersiz şirket adı": "invalid company name", "geçersiz istek": "invalid request", "Bu işlem iPhone uygulamasında yok.": "This is not available in the iPhone app."
   };
   // the window's languages; this storage's own messages exist in Turkish and English (English for all but Turkish)
@@ -202,10 +285,11 @@
       try { uygula(df, rev, is); }
       catch (e) {
         if (e.kod === "cakisma") return hata(cevir(dil, "Kayıtlar bu arada değişti; yeniden deneyin."), 409, "cakisma");
+        if (e.kayit) return hata(cevir(dil, "Kayıt geçersiz: " + e.message), 400, "kayit-gecersiz");
         return hata(cevir(dil, "Kaydedilemedi: " + e.message), 500);
       }
       const yeni = await yaz(df, rev, onceki, tekne);
-      return json({ rev: yeni, zaman: new Date().toISOString() });
+      return json(Object.assign({ rev: yeni, zaman: new Date().toISOString() }, sonNotlar.length ? { temizlenen: sonNotlar.map(n => ({ tarih: n.tarih, satici: n.satici, alanlar: n.alanlar })) } : {}));
     });
   }
   async function fotoKoy(id, istek) {
@@ -214,6 +298,41 @@
     await koy("foto", id, { tur: istek.headers.get("Content-Type") || "image/jpeg", veri, zaman: Date.now() });
   }
   const yeniId = () => { const b = new Uint8Array(16); crypto.getRandomValues(b); return [...b].map(x => x.toString(16).padStart(2, "0")).join(""); };
+
+  // Receipt pictures of the Excel "Fişler" sheet (rapor-fis.js): the photos kept on this phone are read, shrunk (longest side 900 px) and
+  // handed to xlsx.js. The phone keeps less in memory than the computer: at most 150 pictures and 30 MB per workbook; the limit is
+  // checked BEFORE a picture is added (a photo that cannot be shrunk is only used when it still fits), the rest is left out.
+  async function resimleriHazirla(sayfalar) {
+    let sayi = 0, toplam = 0;
+    for (const sf of Array.isArray(sayfalar) ? sayfalar : []) {
+      const l = Array.isArray(sf.resimler) ? sf.resimler : [], sig = sf.sig; delete sf.sig;
+      sf.resimler = [];
+      for (const r of l) {
+        if (sayi >= 150 || toplam >= 30 << 20) break;
+        if (!r || !FOTO.test(r.foto || "")) continue;
+        try {
+          const f = await al("foto", r.foto); if (!f || !f.veri) continue;
+          const k = await kucult(f.veri); if (!k || toplam + k.veri.length > 30 << 20) continue;
+          sayi++; toplam += k.veri.length;
+          sf.resimler.push({ r: r.r, veri: k.veri, kutuGen: r.kutuGen, kutuYuk: r.kutuYuk });
+        } catch (e) { }
+      }
+      const eksik = l.filter(r => r && FOTO.test(r.foto || "")).length - sf.resimler.length;   // pictures that did not go in: the sheet says so (CT-R14)
+      if (eksik > 0 && sig && /^[A-Z]{1,3}\d{1,6}$/.test(sig.r || "") && typeof sig.metin === "string") (sf.hucreler = sf.hucreler || []).push({ r: sig.r, v: sig.metin.replace("{n}", String(eksik)), st: "etiket", f: "" });
+    }
+  }
+  async function kucult(veri) {   // → { veri: Uint8Array } (JPEG, at most 900 px); the photo as it is when the phone cannot shrink it
+    const ham = new Uint8Array(veri);
+    if (!(ham[0] === 0xFF && ham[1] === 0xD8)) return null;
+    try {
+      if (typeof createImageBitmap !== "function" || typeof OffscreenCanvas === "undefined") return { veri: ham };
+      const bmp = await createImageBitmap(new Blob([ham], { type: "image/jpeg" })), k = Math.min(1, 900 / Math.max(bmp.width, bmp.height));
+      if (k >= 1) return { veri: ham };
+      const c = new OffscreenCanvas(Math.max(1, Math.round(bmp.width * k)), Math.max(1, Math.round(bmp.height * k))), x = c.getContext("2d");
+      x.fillStyle = "#fff"; x.fillRect(0, 0, c.width, c.height); x.drawImage(bmp, 0, 0, c.width, c.height);
+      return { veri: new Uint8Array(await (await c.convertToBlob({ type: "image/jpeg", quality: 0.72 })).arrayBuffer()) };
+    } catch (e) { return { veri: ham }; }
+  }
 
   async function rapor(url, dil0) {
     const q = url.searchParams, aylar = (q.get("ay") || "").split(",").filter(a => /^\d{4}-\d{2}$/.test(a));
@@ -224,13 +343,14 @@
     const tekne = q.get("tekne") || ANA;
     if (tekne !== ANA && !(await indeksAl()).x.tekneler.some(t => t.id === tekne)) return new Response(cevir(dil, "Tekne bulunamadı"), { status: 404 });
     const { df } = await defterAl(tekne);
-    const veri = JSON.stringify({ defter: df, aylar, fotograflar: q.get("foto") !== "0", yazdir: false, kartEkstresi: q.get("kart") === "1", dil, olusturma: new Date().toISOString(), token: "", surum: g.KJ_SURUM || "", ortam: "web" }).replace(/<\//g, "<\\/");
+    const veri = JSON.stringify({ defter: df, aylar, fotograflar: q.get("foto") !== "0", yazdir: false, kartEkstresi: q.get("kart") === "1", dil, olusturma: new Date().toISOString(), token: "", surum: g.KJ_SURUM || "", ortam: "web" }).replace(/</g, "\\u003c");
     const T = dil !== "tr"
       ? { alt: "Prepared with Yachting Jurnal · For information only; not an official accounting record.", sayfa: '"Page " counter(page) " of " counter(pages)', yazdir: "Print / PDF", geri: "‹ Back" }
       : { alt: "Yachting Jurnal ile hazırlanmıştır · Bilgi amaçlıdır; resmî muhasebe kaydı yerine geçmez.", sayfa: '"Sayfa " counter(page) " / " counter(pages)', yazdir: "Yazdır / PDF", geri: "‹ Geri" };
     let h = await sablon.text();
-    h = h.split("/*VERI*/null").join(veri).split("{{DIL}}").join(dil).split("{{ALT}}").join(T.alt).split("{{SAYFA}}").join(T.sayfa).split("{{YAZDIR}}").join(T.yazdir)
+    h = h.split("{{DIL}}").join(dil).split("{{ALT}}").join(T.alt).split("{{SAYFA}}").join(T.sayfa).split("{{YAZDIR}}").join(T.yazdir)
       .split("{{GERI}}").join('<a class="geri" href="./">' + T.geri + "</a>");
+    h = h.split("/*VERI*/null").join(veri);   // CT-G9: veri en son (kayıt metnindeki {{...}} sonradan değişmez)
     return new Response(h, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
   }
 
@@ -259,6 +379,27 @@
         if (yol === "api/ping") return json({ rev: (await al("kv", anahtar("rev", tekne))) || 0, trev: (await al("kv", "tekneler-rev")) || 0 });
         if (yol === "api/islem" && m === "POST") return await islem(await istek.text(), dil, tekne);
       }
+      if (yol === "api/sifirlama-kopya") {   // the full copy of the book taken just before "reset the book": its own key, never pruned (only the latest; 400 days or "delete for good")
+        const tekne = await tekneOf(istek, url);
+        if (!tekne) return hata(cevir(dil, "Tekne bulunamadı"), 404);
+        const ad = anahtar("sifirlama", tekne);
+        if (m === "POST") return sirayla(async () => {
+          const { df, var: varMi } = await defterAl(tekne);
+          if (!varMi) return hata(cevir(dil, "Kaydedilemedi: defter yok"), 409);
+          const kayit = { zaman: new Date().toISOString(), kayitSayisi: df.kayitlar.length, para: df.ayarlar.para || "", defter: JSON.parse(JSON.stringify(df)) };
+          await koy("kv", ad, kayit);                                             // an error here fails the request: the caller does not reset
+          const geri = await al("kv", ad);
+          if (!geri || geri.zaman !== kayit.zaman || !geri.defter || geri.defter.kayitlar.length !== kayit.kayitSayisi || JSON.stringify(geri.defter) !== JSON.stringify(kayit.defter)) return hata(cevir(dil, "Kaydedilemedi: kopya doğrulanamadı"), 500);
+          return json({ zaman: kayit.zaman, kayitSayisi: kayit.kayitSayisi, para: kayit.para });
+        });
+        if (m === "GET") {
+          const k = await al("kv", ad);
+          if (k && Date.now() - Date.parse(k.zaman || 0) > 400 * 864e5) { await sil("kv", ad); return json({ var: false }); }
+          if (!k || !k.defter) return json({ var: false });
+          return json(url.searchParams.get("tam") === "1" ? { var: true, zaman: k.zaman, kayitSayisi: k.kayitSayisi, para: k.para, defter: k.defter } : { var: true, zaman: k.zaman, kayitSayisi: k.kayitSayisi, para: k.para });
+        }
+        if (m === "DELETE") { await sil("kv", ad); return yok(); }
+      }
       if (yol === "api/kur") {   // TCMB rates: kur.json on the site (refreshed there by a scheduled task); the last one stays for offline use
         try {
           const r = await fetch(new URL("kur.json", g.registration.scope).href, { cache: "no-store" });
@@ -278,6 +419,7 @@
         const tut = new Set((JSON.parse(await istek.text() || "{}").tut) || []);
         const dl = {}; for (const t of (await indeksAl()).x.tekneler) dl[t.id] = (await defterAl(t.id)).df;   // every boat's photos stay, archived boats too
         for (const d of Object.values(dl)) for (const k of [...(d.kayitlar || []), ...Object.values(d.silinenKayitlar || {}).map(x => x && x.kayit || {})]) if (k && k.photo) tut.add(k.photo);   // + deleted-entry archives (T-3)
+        for (const d of Object.values(dl)) for (const id of korunanFoto(d.ayarlar)) tut.add(id);   // + the photos of a reset book, kept 400 days
         let n = 0;
         for (const id of await anahtarlar("foto")) { if (tut.has(id)) continue; const f = await al("foto", id); if (f && Date.now() - (f.zaman || 0) > 3600e3) { await sil("foto", id); n++; } }
         return json({ silinen: n });
@@ -288,6 +430,7 @@
       }
       if (yol === "api/excel" && m === "POST") {
         const x = JSON.parse(await istek.text());
+        await resimleriHazirla(x.sayfalar);
         return new Response(g.KJ_XLSX.yaz(x.sayfalar, x.dil, x.para), { headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Cache-Control": "no-store" } });
       }
       if (yol === "api/excel-oku" && m === "POST") {
